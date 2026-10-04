@@ -6,9 +6,39 @@
   "main": "main.js",
   "scripts": {
     "start": "node start.js",
-    "test": "node --test"
+    "test": "node --test",
+    "payload": "node build-payload.js",
+    "pack": "node build-payload.js && electron-builder --win dir",
+    "dist": "node build-payload.js && electron-builder --win zip"
   },
   "devDependencies": {
-    "electron": "^41.7.1"
+    "electron": "^41.7.1",
+    "electron-builder": "26.0.12"
+  },
+  "build": {
+    "appId": "local.tradeagent.desktop",
+    "productName": "tradeagent",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "shell.html",
+      "shell.css",
+      "shell.js",
+      "icon.png",
+      "lib/**",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "payload",
+        "to": "python"
+      }
+    ],
+    "win": {
+      "signAndEditExecutable": false
+    }
   }
 }

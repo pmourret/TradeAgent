@@ -129,7 +129,29 @@ Elle **prévient par une notification de bureau** quand l'état d'un profil chan
 
 Limites : seules les **transitions** sont notifiées (un bot déjà mort au lancement de l'application ne notifie pas, la page le montre) ; rien n'arrive si l'application est quittée ou le PC éteint ; le silence n'est surveillé que pour les bots démarrés par l'application (les autres notifications marchent aussi pour un bot lancé ailleurs, tant que l'application est ouverte) ; si l'interface web d'un profil s'arrête ou ne répond plus, ce profil n'est plus surveillé (son onglet affiche l'erreur) ; la mort d'un bot démarré par l'application donne deux notifications, celle-ci et celle de l'arrêt du processus. Les notifications ne contiennent jamais le texte écrit par l'agent.
 
-Pas encore fait : version portable.
+#### Version portable
+
+Un dossier à poser où l'on veut (disque, clé USB), sans installateur et sans rien écrire ailleurs :
+
+```bash
+cd desktop
+npm run pack         # construit desktop/dist/win-unpacked/ (le dossier de l'application)
+npm run dist         # la même chose, en archive zip dans desktop/dist/
+```
+
+Ces commandes se lancent depuis le dépôt, après `scripts/setup` (elles utilisent le `.venv` pour construire le paquet Python de `tradeagent`). Elles ont besoin du réseau.
+
+Au **premier lancement** de `tradeagent.exe`, l'application prépare son environnement, dans son propre dossier :
+
+1. elle cherche Python 3.10 ou plus récent sur le PC (`py -3`, `python`, `python3`). **Elle ne télécharge pas Python** : s'il est absent ou trop ancien, elle affiche la version requise et un bouton vers https://www.python.org/downloads/, puis propose de réessayer ;
+2. elle crée `.venv` et y installe `tradeagent` (livré avec l'application) et ses dépendances, téléchargées sur PyPI. **Une connexion Internet est nécessaire à ce premier lancement**, qui dure quelques minutes au plus ;
+3. elle crée `config.yaml` et `.env` s'ils n'existent pas. Ils ne sont jamais écrasés ensuite : mets ta clé dans `.env` pour le profil `llm`.
+
+Tout vit dans le dossier de l'application : `config.yaml`, `.env`, `data/` (bases, journaux, cache de la fenêtre) et `.venv`. Rien n'est écrit dans le dossier utilisateur. Le dossier doit être inscriptible (pas `Program Files`). Aux lancements suivants, rien n'est réinstallé ; quand la version de l'application change, le `.venv` est refait, sans toucher à `config.yaml`, `.env` ni `data/`.
+
+Les dépendances sont installées aux versions du `.venv` qui a servi à construire l'application (fichier `constraints.txt` livré), pas « à la dernière version ». pip tourne isolé : il ignore la configuration pip du PC (seul PyPI est utilisé), n'installe que des paquets déjà construits (aucun code de construction n'est exécuté) et ne reçoit pas les variables d'environnement du PC, donc aucune clé. Quitter pendant l'installation l'interrompt ; elle reprend de zéro au lancement suivant.
+
+Limites : les versions ne sont pas vérifiées par empreinte (hachage) ; le fichier de contraintes vient d'un Python 3.12 sous Windows, donc avec une autre version de Python une dépendance qui lui est propre serait prise à sa dernière version ; `config.yaml` livré est celui du dépôt au moment de la construction ; deux copies de l'application lancées en même temps se partagent les mêmes ports, la seconde affiche alors les pages de la première ; l'exécutable n'est pas signé (Windows peut afficher un avertissement) et garde l'icône d'Electron, et seule la construction pour Windows existe.
 
 Les protections de l'interface web restent en place, et la fenêtre en ajoute : chaque page tourne en bac à sable, sans accès à Node ni au processus principal ; elle ne peut ni naviguer ni charger quoi que ce soit hors de son serveur local, ni ouvrir de fenêtre, ni obtenir de permission ; un port n'est affiché que si c'est bien tradeagent qui y répond.
 

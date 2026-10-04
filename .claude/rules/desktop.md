@@ -20,13 +20,16 @@ Coquille mince autour de l'interface web locale. `web.py` reste la seule interfa
 ## Organisation
 
 - `main.js` : tout ce qui dépend d'Electron (fenêtre, onglets, menus, zone de notification, sortie).
-- `lib/backend.js`, `lib/supervisor.js`, `lib/notifier.js` : logique sans Electron, testée par `node --test`. Toute nouvelle logique testable va dans `lib/`, pas dans `main.js`.
+- `lib/setup.js` : première installation de la version portable (trouver Python, créer le venv, installer la roue livrée). `build-payload.js` prépare `payload/` (roue, `constraints.txt`, modèles de config). Ne jamais livrer `.env` ni `data/` ; ne jamais écraser `config.yaml` ni `.env` ; ne jamais télécharger Python.
+- `lib/backend.js`, `lib/supervisor.js`, `lib/notifier.js`, `lib/setup.js` : logique sans Electron, testée par `node --test`. Toute nouvelle logique testable va dans `lib/`, pas dans `main.js`.
 - Tests Node hors réseau ; les faux bots sont de petits scripts Node, jamais le vrai Python.
 
 ## Pièges
 
 - `ELECTRON_RUN_AS_NODE=1` (hérité des terminaux lancés par VSCode) fait démarrer Electron comme un simple Node, sans fenêtre (`app` vaut `undefined`) : passer par `npm start` (`start.js` retire la variable). Sous PowerShell, `npm start -- --profile=demo` perd l'argument : utiliser `node start.js --profile=demo`.
 - Vérifier l'application sans la regarder : `TRADEAGENT_DESKTOP_SMOKE=<dossier>` fait capturer la barre d'onglets et la page active (`shell.png`, `view.png`, `state.json`), puis quitter. Avec `TRADEAGENT_DESKTOP_SMOKE_BOT=demo` en plus : démarre ce bot, range la fenêtre, l'arrête et écrit son état. Délègue cette vérification au sous-agent `verif-desktop`.
+- electron-builder est épinglé à 26.0.12 : les versions suivantes demandent Node ≥ 22.12 (`ERR_REQUIRE_ESM` sous 22.11). `signAndEditExecutable: false` évite le téléchargement de winCodeSign, qui échoue sans droit de créer des liens symboliques ; conséquence : icône et métadonnées d'Electron sur l'exécutable.
+- Version portable : `npm run pack`, puis copier `dist/win-unpacked` ailleurs et lancer `tradeagent.exe` avec `TRADEAGENT_DESKTOP_SMOKE` pour vérifier un premier lancement (réseau nécessaire). Dans un heredoc de Git Bash, `\\` devient `\` : écrire les scripts avec l'outil d'écriture.
 - `node --test test/` échoue sous Node 22 (le dossier est pris pour un module) : `node --test` tout court.
 - Les boîtes de dialogue, le menu de la zone de notification et les notifications ne sont vus par aucun test : dis-le quand tu y touches, Pierre doit les regarder.
 - Jamais lancée sous Linux ni macOS.

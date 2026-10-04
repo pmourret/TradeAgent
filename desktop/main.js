@@ -1,6 +1,7 @@
 "use strict";
 /*
- * Application de bureau tradeagent : visionneuse (F1), superviseur (F2) et notifications de bureau (F3).
+ * Application de bureau tradeagent : visionneuse (F1), superviseur (F2), notifications de bureau (F3) et
+ * version portable (F4 : au premier lancement, l'environnement Python est créé dans le dossier de l'application).
  *
  * Visionneuse : pour chaque profil, on lance `python -m tradeagent web --profile X` (l'interface web locale
  * en lecture seule, inchangée) et on l'affiche dans un onglet.
@@ -29,10 +30,17 @@ const path = require("node:path");
 const backend = require("./lib/backend");
 const { Supervisor } = require("./lib/supervisor");
 const { Watcher } = require("./lib/notifier");
+const setup = require("./lib/setup");
 
 const TAB_BAR_HEIGHT = 40;          // même valeur que .tabs dans shell.css
 const PARTITION = "tradeagent";     // session à part, en mémoire : rien n'est écrit sur disque par les pages
-const ROOT = path.resolve(process.env.TRADEAGENT_ROOT || path.join(__dirname, ".."));
+// En développement : la racine du dépôt. Version portable : le dossier de l'exécutable, où tout vit (config.yaml,
+// .env, data/, .venv), et `payload` = ce qui est livré avec l'application (voir lib/setup.js).
+const { root: ROOT, payload: PAYLOAD } = setup.layout({
+  packaged: app.isPackaged, execPath: process.execPath, resourcesPath: process.resourcesPath, env: process.env,
+  devRoot: path.join(__dirname, ".."),
+});
+if (app.isPackaged) app.setPath("userData", path.join(ROOT, "data", "electron"));   // rien dans le dossier utilisateur
 const SMOKE_DIR = process.env.TRADEAGENT_DESKTOP_SMOKE || "";   // vérification automatique : capture puis quitte
 const SMOKE_BOT = process.env.TRADEAGENT_DESKTOP_SMOKE_BOT || "";   // ... en démarrant puis arrêtant ce bot
 const LOG_DIR = path.join(ROOT, "data", "logs");
@@ -186,7 +194,57 @@ function stopChildren() {
   }
 }
 
+// ---------------------------------------------------------------- première installation (version portable)
+function announce(title, text) {
+  state.error_title = title;
+  state.error = text;
+  publish();
+}
+
+// Rend vrai quand l'environnement Python est prêt. Les choix passent par des boîtes natives, pas par la page.
+async function ensureInstalled() {
+  for (;;) {
+    let problem;
+    try {
+      const manifest = setup.readManifest(PAYLOAD);
+      if (!setup.needsInstall(ROOT, manifest)) return true;
+      announce("Première installation de tradeagent", "Recherche de Python…");
+      const { python, tooOld } = await setup.findPython();
+      if (python) {
+        let step = "";
+        await setup.install({
+          root: ROOT, payload: PAYLOAD, manifest, python,
+          onStep: (label) => { step = label; announce("Première installation de tradeagent", `${label}…`); },
+          onLine: (line) => announce("Première installation de tradeagent", `${step}…\n\n${line.slice(0, 200)}`),
+        });
+        return true;
+      }
+      problem = { title: "Python est nécessaire", text: setup.missingPythonText(tooOld), download: true };
+    } catch (exc) {
+      problem = { title: "L'installation a échoué", text: String(exc.message || exc), download: false };
+    }
+    announce(problem.title, problem.text);
+    if (SMOKE_DIR) {
+      fs.mkdirSync(SMOKE_DIR, { recursive: true });
+      fs.writeFileSync(path.join(SMOKE_DIR, "state.json"), JSON.stringify({ setup_error: problem }, null, 2));
+      app.quit();
+      return false;
+    }
+    const buttons = problem.download ? ["Ouvrir la page de téléchargement", "Réessayer", "Quitter"] : ["Réessayer", "Quitter"];
+    const { response } = await dialog.showMessageBox(visibleWindow(), {
+      type: "warning", title: "tradeagent", message: problem.title, detail: problem.text,
+      buttons, defaultId: buttons.length - 2, cancelId: buttons.length - 1,
+    });
+    if (response === buttons.length - 1) {
+      app.quit();
+      return false;
+    }
+    if (problem.download && response === 0) shell.openExternal(setup.PYTHON_URL);
+  }
+}
+
 async function boot() {
+  if (PAYLOAD && !(await ensureInstalled())) return;
   const python = backend.venvPython(ROOT);
   if (!fs.existsSync(python)) {
     fatal("Environnement Python absent",
@@ -474,6 +532,7 @@ if (!app.requestSingleInstanceLock()) {
 function finishQuit() {
   quitting = true;
   app.isQuitting = true;
+  setup.killRunning();   // une installation en cours ne doit pas laisser pip tourner seul
   stopChildren();
   if (tray) tray.destroy();
 }

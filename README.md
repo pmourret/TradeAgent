@@ -163,11 +163,24 @@ Ordre de grandeur avec le prompt actuel et Haiku 4.5 (1 $/5 $ par million de tok
 
 Tout est dans `config.yaml`, commenté. Les clés inconnues sont refusées au démarrage (une faute de frappe ne doit pas désactiver un garde-fou en silence), les valeurs incohérentes aussi (ex. palier défensif au-dessus du seuil de mort, budget du jour supérieur au budget total). Le mode `live` est volontairement refusé pour l'instant (voir « Le mode réel n'existe pas encore »). Les prix des tokens et `usd_to_eur` sont dans la config : c'est à toi de les tenir à jour.
 
+## Choisir l'exchange
+
+`exchange` dans `config.yaml` est un identifiant [ccxt](https://github.com/ccxt/ccxt) : le paper trading y lit les prix publics, sans clé ni compte. Prends celui où tu comptes trader réellement, pour que prix, paires et frais du paper ressemblent au réel. N'importe quel identifiant ccxt est accepté ; si une paire de `symbols` n'y existe pas, le bot le dit et liste les paires disponibles dans la même devise.
+
+Avant d'ouvrir un compte quelque part, vérifie que tu as le droit d'y être servi. Dans l'Union européenne, le règlement MiCA impose aux plateformes un agrément de prestataire de services sur crypto-actifs ; sa période transitoire a pris fin le 1er juillet 2026. Pour un résident français :
+
+- cherche **l'entité juridique qui te sert**, pas seulement la marque : un même nom commercial recouvre plusieurs sociétés, et seule celle qui a l'agrément peut te servir ;
+- contrôle-la dans le registre de l'ESMA (prestataires agréés MiCA) et sur la liste blanche de l'AMF ;
+- relève les frais, le montant minimum d'ordre et les permissions des clés API sur les pages officielles de la plateforme, avec la date : ils changent.
+
+Ce projet ne recommande aucune plateforme et ne donne aucun conseil financier ou juridique. La valeur fournie dans `config.yaml` est le choix de son auteur, à refaire pour ta situation.
+
 ## Limites connues
 
-- `CcxtPriceFeed` (vrais prix) et `AnthropicClient` (vrai appel API) n'ont été testés qu'avec des faux : le client Anthropic l'est avec le vrai SDK et un transport HTTP simulé, mais jamais contre le réseau. Valide-les sur ta machine, dans cet ordre : `scripts/paper.sh hold --max-cycles 1` (prix réels, gratuit), puis `scripts/paper.sh llm --max-cycles 1` (un appel API, ~0,002 €).
-- Les scripts `.sh` sont testés sous Linux. Les `.bat` n'ont **pas** pu être exécutés sous Windows : leur forme est vérifiée (CRLF, ASCII, commandes appelées), pas leur comportement. Si l'un échoue, `python -m tradeagent <commande>` fait exactement la même chose.
-- Le paper trading exécute au dernier prix ± glissement fixe, sans profondeur de carnet : c'est optimiste, surtout sur de gros ordres.
+- `CcxtPriceFeed` (vrais prix) n'a tourné pour de vrai que sur un cycle (profil `hold`, prix publics de Bitvavo, le 04/10/2026) : rien sur la durée. `AnthropicClient` (vrai appel API) n'a été testé qu'avec le vrai SDK et un transport HTTP simulé, jamais contre le réseau. Valide-le avec `scripts/paper.sh llm --max-cycles 1` (un appel API, ~0,002 €).
+- Les scripts `.sh` sont testés sous Linux. Côté Windows, seul `paper.bat` a été lancé pour de vrai ; pour les autres `.bat`, la forme est vérifiée (CRLF, ASCII, commandes appelées), pas le comportement. Si l'un échoue, `python -m tradeagent <commande>` fait exactement la même chose.
+- Le paper trading est **optimiste** : exécution au dernier prix ± glissement fixe, sans profondeur de carnet ni écart achat/vente réel. L'écart avec le réel grandit avec la taille de l'ordre et sur les paires peu échangées.
+- Les frais simulés (`costs.fee_rate`) ne valent que s'ils correspondent à l'exchange visé et à ton palier : c'est le taux taker, puisque le bot ne passe que des ordres au marché. La valeur fournie est celle relevée sur la page officielle à la date indiquée dans `config.yaml` ; si tu changes `exchange`, change aussi `fee_rate`, sinon le résultat du paper ne veut plus rien dire.
 - Calculs en `float` : suffisant en simulation, à revoir (`Decimal`) avant tout compte réel.
 - Un seul actif de cotation (EUR par défaut), ordres au marché uniquement.
 - Le LLM ne voit que des bougies et son propre état : ni actualité, ni carnet d'ordres. Rien n'indique qu'il en tire un avantage.

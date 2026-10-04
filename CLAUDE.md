@@ -7,7 +7,7 @@ Lis ce fichier en entier avant de toucher au code. Le `README.md` est la doc uti
 Un agent de trading crypto piloté par un LLM. **L'IA propose, le code dispose** : l'agent ne parle jamais à l'exchange ; chaque décision traverse des garde-fous codés en dur, et un kill switch indépendant le « tue » quand la mise est perdue. L'agent paie aussi son « loyer » : chaque appel au LLM coûte de l'argent réel, compté dans son résultat net (`résultat net = equity − mise − coûts API de la vie`).
 
 - **But de Pierre** : voir ce que donne une petite mise (50 € + coût de l'API) confiée à une IA, avec un objectif de revenu passif. Il est développeur confirmé, débutant en trading crypto. Aucun résultat n'est garanti, et rien n'indique qu'un LLM batte le marché une fois frais **et** API payés : le projet est une expérience, pas un produit.
-- **Où ça tourne** : le PC perso de Pierre, en Python (≥ 3.10). IA via API Anthropic d'abord (Haiku 4.5 par défaut), en local plus tard.
+- **Où ça tourne** : le PC perso de Pierre, en Python (≥ 3.10). IA via API Anthropic d'abord (Haiku 4.5 par défaut), en local plus tard. Prix réels : données publiques de Bitvavo via ccxt (`exchange: bitvavo`), l'exchange visé pour le réel.
 - **Inspiration** : [Conway-Research/automaton](https://github.com/Conway-Research/automaton) (agent autonome qui doit créer de la valeur pour payer son propre calcul, sinon il meurt ; paliers de survie ; règles immuables). **Gardé** : mort économique, loyer d'inférence, paliers de risque, règles hors de portée de l'agent. **Écarté volontairement** : auto-modification du code, réplication, agent maître de son portefeuille.
 - **Mode actuel : paper trading uniquement** (argent fictif). Le mode réel **n'existe pas** (voir §2 et §10).
 
@@ -16,8 +16,9 @@ Un agent de trading crypto piloté par un LLM. **L'IA propose, le code dispose**
 | État | Quoi |
 |---|---|
 | Fait, testé hors réseau (~455 tests) | Moteur, garde-fous, paliers de risque, kill switch, exchange papier, budget d'inférence, agent LLM (vrai SDK + transport HTTP simulé), profils, lanceur `up`, verrou anti-double-bot, interface web (vérifiée dans Chromium), scripts `.sh` (Linux) |
-| Vérifié sur le PC de Pierre (Windows 11, Python 3.12, 2026-10-04) | Suite au vert : 437 passent, 17 ignorés (tests à signaux POSIX du lanceur, tests des `.sh` faute de `sh`). Donc **sous Windows, l'arrêt propre du lanceur et les scripts ne sont couverts par aucun test** |
-| Fait, **jamais exécuté pour de vrai** | `CcxtPriceFeed` (prix réels : le réseau de l'environnement de dev bloque Binance), vrai appel à l'API Anthropic, scripts `.bat` (jamais lancés sous Windows), interface sur Firefox/Safari. Aucun bot n'a encore tourné sur le PC de Pierre (pas de `data/`) |
+| Vérifié sur le PC de Pierre (Windows 11, Python 3.12, 2026-10-04) | Suite au vert : 448 passent, 17 ignorés (tests à signaux POSIX du lanceur, tests des `.sh` faute de `sh`). Donc **sous Windows, l'arrêt propre du lanceur et les scripts ne sont couverts par aucun test** |
+| Exécuté pour de vrai, **une seule fois** (2026-10-04) | `CcxtPriceFeed` sur Bitvavo : un cycle du profil `hold` (étape 0.1 passée), via `python -m tradeagent` et via `scripts\paper.bat`. Message « paire absente » vérifié contre le vrai ccxt. Rien sur la durée. Une vie `hold` est ouverte dans `data/paper-hold.db` |
+| Fait, **jamais exécuté pour de vrai** | Vrai appel à l'API Anthropic, les autres scripts `.bat`, interface sur Firefox/Safari. Dans l'environnement de dev d'origine, le réseau bloque les exchanges : le flux réel ne se teste que sur le PC de Pierre |
 | Fait, vérifié sous Windows seulement | Application de bureau, phase visionneuse (F1) : 7 tests Node + lancement réel avec capture d'écran. Jamais lancée sous Linux/macOS ; le verrouillage des pages (navigation, requêtes externes, permissions) est codé mais **pas testé automatiquement** |
 | **Pas fait** | Suite de l'application de bureau (F2 superviseur, F3 notifications, F4 portable), mode réel (adaptateur d'exchange authentifié + quarantaine), backtest/replay, notifications, export CSV, service/daemon, CI, historique des vies. Dépôt git initialisé (branche `main`), **aucun commit** pour l'instant |
 
@@ -108,6 +109,10 @@ cd desktop && npm install && npm start  # application de bureau (visionneuse) ; 
 - `InstanceLock` ne tient que tant que l'objet est référencé : `InstanceLock(db).acquire()` sans variable libère aussitôt (ou utilise `with`).
 - Avec 50 € de mise et un ordre minimum de 5 €, `cautious` s'active vers 42,5 € d'equity (plus-haut à 50 €) ; son plafond d'ordre (equity × 20 % × 0,5 ≈ 4,25 €) est alors déjà sous le minimum : en pratique `cautious` se comporte comme `defensive`.
 - Le paper est **optimiste** : exécution au dernier prix ± glissement fixe, sans profondeur de carnet.
+- Binance n'est plus utilisable par les résidents français depuis le 01/07/2026 (pas d'agrément MiCA ; information de Pierre, recoupée par la presse spécialisée, pas lue sur une source officielle). Son API publique de prix répond encore : ça ne prouve rien sur le droit d'y trader.
+- `bitpanda` n'existe pas dans ccxt 4.5.85.
+- Les frais et minimums que ccxt annonce (`markets[...]["taker"]`, `limits`) sont des valeurs embarquées, parfois périmées (Kraken : 0,26 % dans ccxt contre 0,80 % sur la page officielle le 04/10/2026). Ne jamais s'en servir comme source pour `fee_rate`.
+- `costs.fee_rate` est lié à `exchange` : changer l'un sans l'autre fausse le paper.
 - Devise de cotation EUR et paires `X/EUR` : changer d'exchange ou de devise impose de vérifier que les paires existent.
 - Les prix des tokens du LLM et `usd_to_eur` sont dans `config.yaml` : à tenir à jour à la main.
 - L'UI valorise les positions avec `last_quotes`, écrit par le moteur : ne pas le supprimer.
@@ -122,6 +127,7 @@ cd desktop && npm install && npm start  # application de bureau (visionneuse) ; 
 | Décision | Pourquoi |
 |---|---|
 | Spot, ordres au marché, pas de levier ni de short | Perte bornée à la mise, simplicité |
+| Exchange cible : `bitvavo`, choisi le 2026-10-04 | Raison : à compléter par Pierre. Éléments relevés ce jour-là : taker du premier palier 0,25 % (page officielle, contre 0,80 % chez Kraken Pro), marchés en EUR, minimum d'ordre de 5 € selon ccxt (à vérifier), agrément MiCA via l'AFM néerlandaise selon des sites tiers (à vérifier sur le registre ESMA) |
 | `hold` est la référence à battre | Sans elle, un résultat positif ne prouve rien (le marché a pu monter seul) |
 | API d'abord, LLM local ensuite | Décision de Pierre ; l'interface `LLMClient` est prête |
 | SQLite + `kv` JSON | Un fichier, transactionnel, lisible en lecture seule par l'UI |
@@ -149,13 +155,13 @@ Code dans `desktop/` (Node/Electron), sans toucher au moteur. Chaque phase est l
 - **F5. Qualité** : tests Node hors réseau (`node --test`) pour la supervision et les notifications ; à brancher sur D5.
 
 ### Étape 0 — Valider en vrai (Pierre, sur son PC ; aucun code, ~1 semaine)
-1. `scripts/paper.sh hold --max-cycles 1` passe (prix réels). Sinon : corriger `CcxtPriceFeed`.
+1. `scripts/paper.sh hold --max-cycles 1` passe (prix réels). Sinon : corriger `CcxtPriceFeed`. — *passé le 2026-10-04 sur Bitvavo.*
 2. `scripts/paper.sh llm --max-cycles 1` passe ; mesurer le coût réel d'un appel (attendu ≈ 0,002 €).
 3. `scripts/start.sh hold llm` pendant 7 jours sans `halted` inexpliqué ; comparer avec `status --all`.
 
 ### Étape 1 — Prérequis de l'argent réel (dans cet ordre, seulement après l'étape 0)
 - **a. Quarantaine** : le moteur n'appelle plus `market_order` directement ; il enregistre l'ordre validé par les garde-fous (table `pending_orders` : id, ts, symbole, sens, quantité, prix de référence, expiration, statut). Confirmation en **CLI** (`tradeagent orders / approve / reject`, à créer) ; une approbation depuis l'UI serait une décision à prendre avec Pierre, pas par défaut. Expiration (~10 min) et refus si le prix a trop bougé ; l'approbation rejoue les garde-fous avec l'état du moment ; la liquidation de mort n'y passe pas.
-- **b. `RealExchange`** (ccxt authentifié, protocole `Exchange`) : testnet d'abord ; clés par variables d'environnement ; `clientOrderId` pour l'idempotence ; après un timeout, **réconcilier avant tout renvoi** ; frais réels (y compris payés en autre monnaie), précisions et notionnel minimum de l'exchange, exécutions partielles ; **les soldes de l'exchange font foi** (écart avec l'état local au-delà d'un seuil → `halted`).
+- **b. `RealExchange`** (ccxt authentifié, protocole `Exchange`) : testnet d'abord ; clés par variables d'environnement ; `clientOrderId` pour l'idempotence ; après un timeout, **réconcilier avant tout renvoi** ; frais réels (y compris payés en autre monnaie), précisions et notionnel minimum de l'exchange, exécutions partielles ; **les soldes de l'exchange font foi** (écart avec l'état local au-delà d'un seuil → `halted`). À vérifier avant d'écrire la moindre ligne : (1) le montant minimum d'ordre de l'exchange, par paire, comparé à `min_order_quote: 5` (ccxt annonce 5 € sur Bitvavo, non vérifié sur une page officielle) ; (2) si l'exchange propose un environnement de test pour les ordres au comptant (aucune trace trouvée pour Bitvavo le 2026-10-04 : sans lui, « testnet d'abord » devient impossible et le plan de test est à revoir avec Pierre) ; (3) les permissions des clés API : limitées au trading, sans droit de retrait, restreintes à une IP si l'exchange le permet.
 - **c. `Decimal`** pour montants et quantités en mode réel.
 - **d. Profil `live`** : `mode: live` accepté seulement si (a) et (b) existent et que la quarantaine est active ; plafond dur `max_live_stake` ; confirmation tapée dans `scripts/live.*` ; retirer le refus de `profiles.py`.
 - **e. Filets** : alertes (D1) obligatoires avant le réel ; watchdog séparé qui lit le solde et peut liquider si le bot meurt en silence.

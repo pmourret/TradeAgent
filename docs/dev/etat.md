@@ -1,0 +1,14 @@
+# État réel du projet
+
+À tenir à jour à chaque changement : ce qui est fait, ce qui n'a jamais tourné pour de vrai, ce qui manque.
+
+| État | Quoi |
+|---|---|
+| Fait, testé hors réseau (~455 tests) | Moteur, garde-fous, paliers de risque, kill switch, exchange papier, budget d'inférence, agent LLM (vrai SDK + transport HTTP simulé), profils, lanceur `up`, verrou anti-double-bot, interface web (vérifiée dans Chromium), scripts `.sh` (Linux) |
+| Vérifié sur le PC de Pierre (Windows 11, Python 3.12, 2026-10-04) | Suite au vert : 465 passent, 17 ignorés (tests à signaux POSIX du lanceur, tests des `.sh` faute de `sh`). Sous Windows, l'arrêt propre est couvert par `test_stopper.py` (`--stop-on-stdin`, de bout en bout) ; **l'arrêt de `tradeagent up` et les scripts `.sh` n'y sont couverts par aucun test** |
+| Exécuté pour de vrai, **une seule fois** (2026-10-04) | `CcxtPriceFeed` sur Bitvavo : un cycle du profil `hold` (étape 0.1 passée), via `python -m tradeagent` et via `scripts\paper.bat`. Message « paire absente » vérifié contre le vrai ccxt. Rien sur la durée. Une vie `hold` est ouverte dans `data/paper-hold.db` |
+| Fait, **jamais exécuté pour de vrai** | Vrai appel à l'API Anthropic, les autres scripts `.bat`, interface sur Firefox/Safari. Dans l'environnement de dev d'origine, le réseau bloque les exchanges : le flux réel ne se teste que sur le PC de Pierre |
+| Fait, vérifié sous Windows seulement | Application de bureau, visionneuse (F1) et superviseur (F2) : 21 tests Node + lancements réels avec capture d'écran. Jamais lancée sous Linux/macOS ; le verrouillage des pages (navigation, requêtes externes, permissions) est codé mais **pas testé automatiquement** ; menus de la zone de notification et boîtes de dialogue jamais regardés à l'œil |
+| **Pas fait** | Suite de l'application de bureau (F3 notifications, F4 portable), mode réel (adaptateur d'exchange authentifié + quarantaine), backtest/replay, notifications, export CSV, service/daemon, CI, historique des vies. Dépôt git initialisé (branche `main`), **aucun commit** pour l'instant |
+
+Premier réflexe si quelque chose « ne marche pas » : `scripts/paper.sh hold --max-cycles 1` (prix réels, gratuit). Si ça échoue, c'est le flux ccxt, jamais testé en vrai.

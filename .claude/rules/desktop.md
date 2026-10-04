@@ -1,0 +1,31 @@
+---
+paths:
+  - "desktop/**"
+---
+
+# Application de bureau (Electron)
+
+Coquille mince autour de l'interface web locale. `web.py` reste la seule interface ; elle doit toujours marcher dans un navigateur.
+
+## Règles de sécurité (invariant 10)
+
+- La page d'un profil tourne en bac à sable, sans Node, **sans preload** : elle n'a aucun moyen de parler au processus principal.
+- Démarrer et arrêter un bot : menu natif et zone de notification uniquement. **N'ajoute aucun message IPC, aucun bouton dans une page, aucune route HTTP qui agisse sur un bot.** `test/readonly.test.js` vérifie que les seuls messages sont `select-tab`, `shell-ready` et `tabs`.
+- Le superviseur démarre et arrête, rien d'autre : jamais `reset`, `resume`, `--agent`, `--feed`, `live`.
+- Dans les pages (`shell.js`) : `textContent` et classes CSS seulement ; ni `innerHTML`, ni style en ligne, ni ressource externe.
+- Les profils (noms, ports) se lisent dans `profiles.py` via Python, jamais recopiés côté Node.
+- Fermer la fenêtre range l'application et les bots continuent ; seul « Quitter » les arrête, par `stop` sur leur entrée standard (`run --stop-on-stdin`). L'arrêt sec n'est qu'un dernier recours après délai.
+
+## Organisation
+
+- `main.js` : tout ce qui dépend d'Electron (fenêtre, onglets, menus, zone de notification, sortie).
+- `lib/backend.js`, `lib/supervisor.js` : logique sans Electron, testée par `node --test`. Toute nouvelle logique testable va dans `lib/`, pas dans `main.js`.
+- Tests Node hors réseau ; les faux bots sont de petits scripts Node, jamais le vrai Python.
+
+## Pièges
+
+- `ELECTRON_RUN_AS_NODE=1` (hérité des terminaux lancés par VSCode) fait démarrer Electron comme un simple Node, sans fenêtre (`app` vaut `undefined`) : passer par `npm start` (`start.js` retire la variable). Sous PowerShell, `npm start -- --profile=demo` perd l'argument : utiliser `node start.js --profile=demo`.
+- Vérifier l'application sans la regarder : `TRADEAGENT_DESKTOP_SMOKE=<dossier>` fait capturer la barre d'onglets et la page active (`shell.png`, `view.png`, `state.json`), puis quitter. Avec `TRADEAGENT_DESKTOP_SMOKE_BOT=demo` en plus : démarre ce bot, range la fenêtre, l'arrête et écrit son état. Délègue cette vérification au sous-agent `verif-desktop`.
+- `node --test test/` échoue sous Node 22 (le dossier est pris pour un module) : `node --test` tout court.
+- Les boîtes de dialogue, le menu de la zone de notification et les notifications ne sont vus par aucun test : dis-le quand tu y touches, Pierre doit les regarder.
+- Jamais lancée sous Linux ni macOS.

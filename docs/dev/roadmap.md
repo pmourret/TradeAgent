@@ -1,0 +1,51 @@
+# Feuille de route
+
+Axes d'évolution, dans l'ordre conseillé. Mettre à jour quand une phase avance.
+
+**Ordre conseillé** : axe F (F1 → F4, priorité de Pierre ; l'étape 0 se fait en parallèle, elle ne demande aucun code) → B1 → B2–B4 selon les résultats → D1/D2 → étape 1 (a → e) → réel à 50 €. Rien ne justifie de brancher l'argent réel avant d'avoir montré, en paper, que l'agent fait mieux que `hold` *net de l'API*. S'il n'y arrive pas, la valeur du projet est le cadre d'expérimentation lui-même.
+
+### Axe F — Application de bureau Electron (priorité actuelle)
+Code dans `desktop/` (Node/Electron), sans toucher au moteur. Chaque phase est livrable seule.
+- **F0. Socle** — *fait le 2026-10-04* : `git init`, suite au vert sous Windows (PID du `.lock` lisible pendant que le bot tourne, `test_launcher.py` chargeable, chemins comparés en `Path`).
+- **F1. Visionneuse** — *faite le 2026-10-04, vérifiée par capture d'écran sous Windows (Electron 41) ; reste le nom du profil dans l'en-tête de la page web (axe E), aujourd'hui seulement dans l'onglet et le titre de la fenêtre* : le processus principal lance `python -m tradeagent web --profile X` pour chaque profil et affiche `http://127.0.0.1:<port>` dans une fenêtre à onglets (un par profil). Fenêtre verrouillée : `sandbox`, `contextIsolation`, pas de `nodeIntegration`, pas de preload sur la page du bot, navigation et nouvelles fenêtres hors boucle locale refusées. Une seule instance de l'app. Nom du profil dans l'en-tête et le titre (axe E). En développement, l'app utilise le `.venv` du projet.
+- **F2. Superviseur** — *fait le 2026-10-04. Vérifié pour de vrai sous Windows : démarrage du bot `demo` par l'app, fenêtre rangée pendant qu'il tourne, arrêt propre, journal écrit, aucun processus ni port restant. **Jamais regardés à l'œil** : le menu de la zone de notification, les boîtes de confirmation (`llm`, Quitter) et la notification d'arrêt inattendu ; l'arrêt des bots quand l'app est tuée n'est testé que côté Python (fermeture de l'entrée standard). Limite connue : un bot lancé hors de l'app n'est pas vu par le superviseur* : démarrer/arrêter chaque profil depuis le menu natif et la zone de notification ; confirmation avant `llm` (API facturée) ; erreurs de pré-lancement affichées (clé absente, base déjà verrouillée). Fermer la fenêtre = réduire dans la zone de notification, les bots continuent ; « Quitter » les arrête. **Prérequis côté Python : un arrêt propre sous Windows** (aujourd'hui `terminate()` = arrêt sec). Décidé avec Pierre (2026-10-04) : le bot s'arrête en fin de cycle quand son entrée standard se ferme ou reçoit `stop` — canal local parent → enfant, équivalent à Ctrl+C, donc si l'app meurt les bots s'arrêtent aussi. Sortie des bots dans des fichiers de logs avec rotation (`data/logs/`, recouvre une partie de D2).
+- **F3. Notifications de bureau** : le processus principal interroge `/api/snapshot` de chaque profil et notifie sur transition : mort, `halted`, changement de palier, bot arrêté sans l'avoir demandé ou sans cycle depuis trop longtemps, budget API épuisé. Sortantes uniquement. Détection des transitions = fonction pure, testée. Ne remplace pas D1 (rien n'arrive si le PC est éteint ou l'app quittée).
+- **F4. Portable + semi-installeur** : exécutable portable (electron-builder) ; au premier lancement, un écran d'installation trouve Python ≥ 3.10, crée le venv, installe `tradeagent` et ses dépendances, puis lance l'app ; le venv est refait si la version change. Décidé avec Pierre (2026-10-04) : `config.yaml`, `.env`, `data/` et le venv vivent **dans le dossier de l'application** (vraiment portable, rien dans le dossier utilisateur) ; si Python est absent ou trop ancien, **simple message avec lien de téléchargement et version requise**, pas de téléchargement automatique de Python.
+- **F5. Qualité** : tests Node hors réseau (`node --test`) pour la supervision et les notifications ; à brancher sur D5.
+
+### Étape 0 — Valider en vrai (Pierre, sur son PC ; aucun code, ~1 semaine)
+1. `scripts/paper.sh hold --max-cycles 1` passe (prix réels). Sinon : corriger `CcxtPriceFeed`. — *passé le 2026-10-04 sur Bitvavo.*
+2. `scripts/paper.sh llm --max-cycles 1` passe ; mesurer le coût réel d'un appel (attendu ≈ 0,002 €).
+3. `scripts/start.sh hold llm` pendant 7 jours sans `halted` inexpliqué ; comparer avec `status --all`.
+
+### Étape 1 — Prérequis de l'argent réel (dans cet ordre, seulement après l'étape 0)
+- **a. Quarantaine** : le moteur n'appelle plus `market_order` directement ; il enregistre l'ordre validé par les garde-fous (table `pending_orders` : id, ts, symbole, sens, quantité, prix de référence, expiration, statut). Confirmation en **CLI** (`tradeagent orders / approve / reject`, à créer) ; une approbation depuis l'UI serait une décision à prendre avec Pierre, pas par défaut. Expiration (~10 min) et refus si le prix a trop bougé ; l'approbation rejoue les garde-fous avec l'état du moment ; la liquidation de mort n'y passe pas.
+- **b. `RealExchange`** (ccxt authentifié, protocole `Exchange`) : faux serveur local d'abord (voir plus bas, Bitvavo n'a pas de testnet au comptant) ; clés par variables d'environnement ; `clientOrderId` pour l'idempotence ; après un timeout, **réconcilier avant tout renvoi** ; frais réels (y compris payés en autre monnaie), précisions et notionnel minimum de l'exchange, exécutions partielles ; **les soldes de l'exchange font foi** (écart avec l'état local au-delà d'un seuil → `halted`). Relevé pour Bitvavo le 2026-10-04 (doc officielle : https://docs.bitvavo.com/, à relire avant d'écrire le code, elle change) :
+  - **Minimum d'ordre : 5 €**, confirmé par Pierre, égal à `min_order_quote: 5`. Aucune marge : un ordre réduit par un garde-fou sous 5 € doit rester refusé côté code avant d'atteindre l'exchange.
+  - **Pas de bac à sable REST au comptant** (rien dans la doc ; seul un environnement UAT existe pour l'API FIX, avec une clé fournie par Bitvavo, accès non vérifié). « Testnet d'abord » est donc remplacé par **un environnement de test à créer** (décision de Pierre) : un faux serveur Bitvavo local qui imite les routes REST utilisées (création d'ordre, soldes, ordres, marchés) et sait simuler timeouts, exécutions partielles, rejets et soldes divergents ; `RealExchange` est testé contre lui hors réseau. La validation réelle se fait ensuite avec des ordres au minimum (5 €), sous quarantaine.
+  - **Clés API** : permissions séparées *View*, *Trade*, *Withdraw*, plus *Subaccounts*, *Internal Transfer* et *Administrative* ; liste blanche d'IP à la création de la clé. N'activer que *View* et *Trade*, avec l'IP de Pierre. *Withdraw* et *Internal Transfer* jamais : la doc précise que les retraits par API se font sans 2FA ni confirmation par e-mail.
+  - **Création d'ordre** : `operatorId` obligatoire (identifiant du bot dans le compte) ; `clientOrderId` optionnel, à toujours fournir pour l'idempotence ; ordre au marché avec `amount` ou `amountQuote`.
+- **c. `Decimal`** pour montants et quantités en mode réel.
+- **d. Profil `live`** : `mode: live` accepté seulement si (a) et (b) existent et que la quarantaine est active ; plafond dur `max_live_stake` ; confirmation tapée dans `scripts/live.*` ; retirer le refus de `profiles.py`.
+- **e. Filets** : alertes (D1) obligatoires avant le réel ; watchdog séparé qui lit le solde et peut liquider si le bot meurt en silence.
+- *Fin d'étape* : tests de timeouts, exécutions partielles, rejets, divergence de solde ; une semaine contre le faux serveur local, puis premiers ordres réels au minimum sous quarantaine.
+
+### Axe B — Qualité de l'agent (là où se joue le résultat)
+- **B1. Replay/backtest** : `ReplayPriceFeed` sur bougies historiques (`fetch_ohlcv`, cache fichier) + horloge simulée ; comparer `hold`, achat-conservation équipondéré, DCA, momentum simple, `chaos`, `llm` sur les mêmes périodes ; cache des réponses LLM par empreinte du prompt pour ne pas payer deux fois. Métriques : résultat net (frais **et** API), drawdown max, nombre d'ordres, frais payés.
+- **B2. Prompt versionné** (version stockée dans `decisions`) et A/B entre deux profils.
+- **B3. Appels sur événement** (volatilité, franchissement de seuil) plutôt que toutes les heures ; ou modèle léger en routine et plus gros modèle sur événement.
+- **B4. « Loyer » indexé sur l'equity** : plafond d'API proportionnel au capital restant (fidèle à l'idée de survie : plus il perd, moins il peut s'offrir d'intelligence).
+- **B5. Mémoire/leçons** réinjectées dans le prompt : à n'adopter que si B1 en montre le gain, coût en tokens compris.
+- **B6. LLM local** (Ollama / llama.cpp) via une nouvelle classe `LLMClient`. Contraintes : GPU de Pierre (dernier état connu : 16 Go de VRAM, partagés avec ses autres projets IA) → modèles quantifiés 7–14 B ; fiabilité du JSON à mesurer (sortie contrainte) ; coût d'API nul mais latence et électricité ; à évaluer contre l'API avec B1.
+- **B7. Plus d'entrées** (carnet d'ordres, autres échelles de temps, actualité) et plus de symboles : un seul ajout à la fois, chacun justifié par B1.
+
+### Axe D — Exploitation
+- **D1. Notifications sortantes** (ntfy / Telegram / e-mail) : mort, arrêt, changement de palier, erreurs répétées, résumé quotidien. Jamais de canal entrant qui commande le bot.
+- **D2. Tourner en continu** : service (systemd ou Planificateur de tâches), redémarrage automatique (sûr : l'état est en base), logs fichier avec rotation (aujourd'hui stdout seulement), sauvegarde de la base.
+- **D3. `tradeagent export`** (à créer) : CSV des exécutions (date, sens, quantité, prix, frais) pour la déclaration fiscale — à vérifier auprès des sources officielles, le projet ne donne pas de conseil fiscal.
+- **D4. Table `lives`** (mise, début, fin, cause, résultat net, coût API) alimentée par `reset` et par la mort, et une page « cimetière » dans l'UI.
+- **D5. CI** GitHub Actions : pytest sur Linux **et Windows** (enfin un vrai test des `.bat`), Python 3.10–3.13.
+- **D6.** `git init` fait (F0) ; restent le premier commit et le linter (ruff).
+
+### Axe E — Interface (reste en lecture seule)
+Vue de comparaison `hold` vs `llm` sur une même page ; nom du profil dans l'en-tête et l'onglet ; page des vies passées (D4) ; vérification Firefox/Safari ; accessibilité.

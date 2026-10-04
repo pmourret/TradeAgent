@@ -1,0 +1,239 @@
+"""Ligne de commande : run, up, status, resume, reset, web."""
+from __future__ import annotations
+
+import argparse
+import logging
+import sys
+import time
+import webbrowser
+from dataclasses import replace
+from pathlib import Path
+
+from .app import AGENT_KINDS, build_agent, build_engine, build_feed, reset_life
+from .budget import InferenceBudget, day_start_ts
+from .config import ConfigError, load_config
+from .envfile import load_env_file
+from .killswitch import KillSwitch, KillSwitchError
+from .launcher import build_jobs, describe, preflight, resolve_profiles, run_jobs
+from .llm import LLMError, require_api_key
+from .lock import InstanceLock
+from .profiles import LIVE, PROFILES, apply_profile, get_profile
+from .storage import Storage
+from .web import DEFAULT_PORT, make_server
+
+
+def _parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(prog="tradeagent", description="Agent de trading crypto (paper trading).")
+    sub = parser.add_subparsers(dest="command", required=True)
+    with_config = argparse.ArgumentParser(add_help=False)
+    with_config.add_argument("--config", default="config.yaml", help="fichier de config (défaut : config.yaml)")
+    common = argparse.ArgumentParser(add_help=False, parents=[with_config])
+    common.add_argument("--profile", choices=[*PROFILES, LIVE], default=None,
+                        help="profil de lancement : " + " ; ".join(f"{p.name} = {p.description}" for p in PROFILES.values())
+                             + " ; live = mode réel (pas encore disponible). Un profil a sa propre base de données.")
+
+    run = sub.add_parser("run", parents=[common], help="lance la boucle de trading")
+    run.add_argument("--agent", choices=AGENT_KINDS, default=None,
+                     help="hold = ne fait rien (défaut) ; chaos = aléatoire, pour tester les garde-fous ; "
+                          "llm = agent Anthropic (coûte de l'argent, clé requise) ; "
+                          "llm-fake = faux LLM hors ligne, mêmes comptes de tokens. Prime sur le profil.")
+    run.add_argument("--feed", choices=["ccxt", "synthetic"], default=None,
+                     help="ccxt = vrais prix publics (défaut), synthetic = marche aléatoire hors ligne. Prime sur le profil.")
+    run.add_argument("--max-cycles", type=int, default=None, help="s'arrête après N cycles")
+    run.add_argument("--cycle-seconds", type=float, default=None, help="remplace cycle_seconds de la config")
+    run.add_argument("--seed", type=int, default=None, help="graine pour agent chaos / llm-fake / flux synthetic")
+
+    status = sub.add_parser("status", parents=[common], help="affiche l'état (lecture seule)")
+    status.add_argument("--all", action="store_true", help="tous les profils qui ont déjà tourné, à la suite")
+    up = sub.add_parser("up", parents=[with_config],
+                        help="lance bot(s) + interface(s) web ensemble dans ce terminal ; Ctrl+C arrête tout")
+    up.add_argument("profiles", nargs="*", metavar="profil",
+                    help="un ou plusieurs profils (défaut : hold). Ex. `up hold llm` compare la référence au LLM")
+    up.add_argument("--no-ui", action="store_true", help="bots seulement, sans interface web")
+    up.add_argument("--no-open", action="store_true", help="n'ouvre pas le navigateur")
+    sub.add_parser("resume", parents=[common], help="relance un bot arrêté (halted) après vérification")
+    reset = sub.add_parser("reset", parents=[common], help="nouvelle vie : repart de la mise de départ")
+    reset.add_argument("--yes", action="store_true", help="confirmation obligatoire")
+    web = sub.add_parser("web", parents=[common],
+                         help="interface web locale en lecture seule (à lancer à côté de `run`, dans un autre terminal)")
+    web.add_argument("--host", default="127.0.0.1", help="boucle locale uniquement (défaut : 127.0.0.1)")
+    web.add_argument("--port", type=int, default=None,
+                     help=f"port (défaut : celui du profil, sinon {DEFAULT_PORT})")
+    web.add_argument("--open", action="store_true", help="ouvre la page dans le navigateur")
+    return parser
+
+
+def _load(args: argparse.Namespace):
+    """Config + profil éventuel. Un profil impose sa base de données (et parfois la cadence)."""
+    cfg = load_config(args.config)
+    profile = get_profile(args.profile) if args.profile else None
+    if profile is not None:
+        cfg = apply_profile(cfg, profile)
+    return cfg, profile
+
+
+def cmd_run(args: argparse.Namespace) -> int:
+    cfg, profile = _load(args)
+    agent_kind = args.agent or (profile.agent if profile else "hold")
+    feed_kind = args.feed or (profile.feed if profile else "ccxt")
+    if args.cycle_seconds is not None:
+        cfg = replace(cfg, cycle_seconds=args.cycle_seconds)
+    if agent_kind == "llm":
+        require_api_key()                         # avant toute écriture : un lancement refusé ne laisse rien derrière lui
+    lock = InstanceLock(cfg.database).acquire()   # gardé jusqu'à la fin du processus
+    storage = Storage(cfg.database)
+    agent = build_agent(agent_kind, cfg, storage, seed=args.seed)
+    feed = build_feed(feed_kind, cfg, seed=args.seed)
+    engine = build_engine(cfg, agent, feed, storage)
+
+    label = f"profil={profile.name} " if profile else ""
+    print(f"{label}mode={cfg.mode} agent={agent.name} flux={feed_kind} mise={cfg.stake:g} {cfg.quote_currency} "
+          f"symboles={','.join(cfg.symbols)}")
+    if profile:
+        print(f"base : {cfg.database}  (interface web : tradeagent web --profile {profile.name})")
+    if agent_kind == "llm":
+        budget = InferenceBudget(cfg.llm, storage)
+        print(f"LLM {cfg.llm.model} : un appel max toutes les {cfg.llm.call_every_seconds / 60:g} min, "
+              f"budget restant {budget.left()['today']:.2f} € aujourd'hui / {budget.left()['total']:.2f} € au total")
+    try:
+        engine.run_forever(max_cycles=args.max_cycles, sleep=time.sleep)
+    except KeyboardInterrupt:
+        print("\ninterrompu (les positions éventuelles sont conservées)")
+    finally:
+        lock.release()
+    return _print_status(cfg)
+
+
+def _open_storage(cfg) -> Storage | None:
+    if not Path(cfg.database).exists():
+        print(f"aucune base à {cfg.database} : rien n'a encore tourné.")
+        return None
+    return Storage(cfg.database)
+
+
+def _print_status(cfg) -> int:
+    storage = _open_storage(cfg)
+    if storage is None:
+        return 0
+    life = storage.get("life") or {"stake": cfg.stake, "started": 0.0}
+    ks = KillSwitch(cfg.killswitch, storage, life["stake"])
+    tier = storage.get("risk_tier", "normal")
+    print(f"\nétat : {ks.status.upper()}" + (f" — {ks.reason}" if ks.reason else "")
+          + (f" | palier de risque : {tier}" if ks.status == "alive" else ""))
+
+    ccy = cfg.quote_currency
+    spent_life = storage.llm_spend_since(life.get("started", 0.0))
+    last = storage.last_equity()
+    if last:
+        change = (last["equity"] / life["stake"] - 1) * 100
+        print(f"equity : {last['equity']:.2f} {ccy} (mise {life['stake']:.2f}, {change:+.2f} %)")
+        net = last["equity"] - life["stake"] - spent_life
+        digits = 4 if 0 < abs(net) < 0.01 else 2   # évite l'affichage trompeur « -0.00 »
+        print(f"résultat net : {net:+.{digits}f} {ccy} (equity - mise - coûts API de cette vie)")
+    balances = storage.get("paper_balances") or {}
+    held = {k: v for k, v in balances.items() if v}
+    print("soldes :", ", ".join(f"{k} {v:.6g}" for k, v in held.items()) or "—")
+
+    calls = storage.count("llm_calls")
+    if calls:
+        today = storage.llm_spend_since(day_start_ts(time.time()))
+        print(f"API LLM : {calls} appels, {storage.llm_spend_since(0.0):.4f} € au total "
+              f"({today:.4f} € aujourd'hui, budget {cfg.llm.daily_budget_eur:.2f} €/jour "
+              f"et {cfg.llm.total_budget_eur:.2f} € au total)")
+    print(f"journal : {storage.count('decisions')} décisions, {storage.count('fills')} exécutions, "
+          f"{storage.count('events')} évènements")
+    for event in reversed(storage.recent_events(3)):
+        print(f"  [{event['level']}] {event['message']}")
+    return 0
+
+
+def cmd_status(args: argparse.Namespace) -> int:
+    if args.all:
+        if args.profile:
+            raise ConfigError("--all et --profile s'excluent")
+        base = load_config(args.config)
+        shown = 0
+        for profile in PROFILES.values():
+            cfg = apply_profile(base, profile)
+            if Path(cfg.database).exists():
+                print(f"=== profil {profile.name} ({profile.agent}) ===")
+                _print_status(cfg)
+                print()
+                shown += 1
+        if not shown:
+            print("aucun profil n'a encore tourné.")
+        return 0
+    return _print_status(_load(args)[0])
+
+
+def cmd_up(args: argparse.Namespace) -> int:
+    cfg = load_config(args.config)
+    profiles = resolve_profiles(args.profiles)
+    preflight(profiles, bots=True)
+    jobs = build_jobs(profiles, args.config, ui=not args.no_ui, open_browser=not args.no_open)
+    print("Lancement (argent fictif) :")
+    print("\n".join(describe(profiles, cfg, bots=True, ui=not args.no_ui)))
+    print("Ctrl+C arrête tout proprement.\n", flush=True)
+    return run_jobs(jobs)
+
+
+def cmd_resume(args: argparse.Namespace) -> int:
+    cfg, _ = _load(args)
+    storage = _open_storage(cfg)
+    if storage is None:
+        return 1
+    life = storage.get("life") or {"stake": cfg.stake}
+    ks = KillSwitch(cfg.killswitch, storage, life["stake"])
+    try:
+        ks.resume()
+    except KillSwitchError as exc:
+        print(f"refusé : {exc}", file=sys.stderr)
+        return 1
+    print("bot relancé (si le bot était déjà actif, rien n'a changé).")
+    return 0
+
+
+def cmd_reset(args: argparse.Namespace) -> int:
+    cfg, _ = _load(args)
+    if not args.yes:
+        print("Cela efface l'état de la vie en cours (soldes simulés, kill switch, plus-haut).\n"
+              "Le journal et le suivi des coûts API sont conservés. Relance avec --yes pour confirmer.",
+              file=sys.stderr)
+        return 1
+    storage = Storage(cfg.database)
+    reset_life(storage, time.time())
+    print(f"nouvelle vie : prochaine mise {cfg.stake:g} {cfg.quote_currency}.")
+    return 0
+
+
+def cmd_web(args: argparse.Namespace) -> int:
+    cfg, profile = _load(args)
+    port = args.port if args.port is not None else (profile.port if profile else DEFAULT_PORT)
+    server = make_server(cfg, args.host, port)
+    host, port = server.server_address[:2]
+    url = f"http://{'localhost' if host == '127.0.0.1' else host}:{port}/"
+    print(f"interface web en lecture seule : {url}  (Ctrl+C pour arrêter ; le bot, lui, tourne dans `tradeagent run`)")
+    if args.open:
+        webbrowser.open(url)
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        print("\narrêt de l'interface web")
+    finally:
+        server.server_close()
+    return 0
+
+
+def main(argv: list[str] | None = None) -> int:
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s", datefmt="%H:%M:%S")
+    load_env_file(".env")
+    args = _parser().parse_args(argv)
+    handlers = {"run": cmd_run, "up": cmd_up, "status": cmd_status, "resume": cmd_resume, "reset": cmd_reset, "web": cmd_web}
+    try:
+        return handlers[args.command](args)
+    except ConfigError as exc:
+        print(f"erreur de configuration : {exc}", file=sys.stderr)
+        return 2
+    except LLMError as exc:
+        print(f"erreur LLM : {exc}", file=sys.stderr)
+        return 2

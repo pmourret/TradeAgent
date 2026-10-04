@@ -1,0 +1,14 @@
+{
+  "name": "tradeagent-desktop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Application de bureau de tradeagent : coquille autour de l'interface web locale en lecture seule.",
+  "main": "main.js",
+  "scripts": {
+    "start": "node start.js",
+    "test": "node --test"
+  },
+  "devDependencies": {
+    "electron": "^41.7.1"
+  }
+}

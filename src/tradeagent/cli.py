@@ -1,4 +1,4 @@
-"""Ligne de commande : run, up, status, resume, reset, web."""
+"""Ligne de commande : run, up, status, resume, reset, web, backtest."""
 from __future__ import annotations
 
 import argparse
@@ -7,12 +7,17 @@ import sys
 import time
 import webbrowser
 from dataclasses import replace
+from datetime import datetime, timezone
 from pathlib import Path
 
 from .app import AGENT_KINDS, build_agent, build_engine, build_feed, reset_life
+from .backtest import BACKTEST_AGENTS, DEFAULT_AGENTS, compare, format_table, market_return_pct, warmup_seconds
 from .budget import InferenceBudget, day_start_ts
 from .config import ConfigError, load_config
 from .envfile import load_env_file
+from .exchange import ExchangeError
+from .models import TIMEFRAME_SECONDS
+from .replay import load_history, public_client, synthetic_history
 from .killswitch import KillSwitch, KillSwitchError
 from .launcher import build_jobs, describe, preflight, resolve_profiles, run_jobs
 from .llm import LLMError, require_api_key
@@ -64,6 +69,18 @@ def _parser() -> argparse.ArgumentParser:
     web.add_argument("--port", type=int, default=None,
                      help=f"port (défaut : celui du profil, sinon {DEFAULT_PORT})")
     web.add_argument("--open", action="store_true", help="ouvre la page dans le navigateur")
+
+    backtest = sub.add_parser("backtest", parents=[with_config],
+                              help="rejoue une période passée avec le vrai moteur et compare des stratégies (gratuit)")
+    backtest.add_argument("--days", type=int, default=30, help="durée de la période rejouée, en jours (défaut : 30)")
+    backtest.add_argument("--end", default=None, metavar="AAAA-MM-JJ",
+                          help="fin de la période, à minuit UTC (défaut : maintenant)")
+    backtest.add_argument("--agents", default=",".join(DEFAULT_AGENTS),
+                          help=f"agents à comparer, séparés par des virgules (choix : {', '.join(BACKTEST_AGENTS)})")
+    backtest.add_argument("--seed", type=int, default=1, help="graine des agents aléatoires et de l'historique synthétique")
+    backtest.add_argument("--synthetic", action="store_true",
+                          help="historique fabriqué (marche aléatoire), sans réseau : pour essayer la commande")
+    backtest.add_argument("--refresh", action="store_true", help="retélécharge l'historique au lieu d'utiliser le cache")
     return parser
 
 
@@ -234,11 +251,69 @@ def cmd_web(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_backtest(args: argparse.Namespace) -> int:
+    cfg = load_config(args.config)
+    agents = [a.strip() for a in args.agents.split(",") if a.strip()]
+    if "llm" in agents:
+        raise ConfigError("le vrai LLM n'est pas disponible en backtest : chaque rejeu coûterait de l'argent réel. "
+                          "Utilise llm-fake pour vérifier la chaîne, sans dépense.")
+    unknown = [a for a in agents if a not in BACKTEST_AGENTS]
+    if unknown or not agents:
+        raise ConfigError(f"agents de backtest inconnus : {', '.join(unknown) or '(aucun)'} "
+                          f"(choix : {', '.join(BACKTEST_AGENTS)})")
+    if args.days < 1:
+        raise ConfigError("--days doit valoir au moins 1")
+    step = TIMEFRAME_SECONDS[cfg.market.timeframe]
+    if args.end:
+        try:
+            end = datetime.strptime(args.end, "%Y-%m-%d").replace(tzinfo=timezone.utc).timestamp()
+        except ValueError as exc:
+            raise ConfigError(f"--end doit être une date AAAA-MM-JJ, reçu {args.end!r}") from exc
+    else:
+        end = time.time()
+    end = end // step * step                     # on s'arrête sur une bougie terminée
+    if end > time.time():
+        raise ConfigError("--end est dans le futur")
+    start = end - args.days * 86_400
+    history_start = start - warmup_seconds(cfg)
+
+    try:
+        if args.synthetic:
+            history = synthetic_history(cfg.symbols, cfg.market.timeframe, history_start, end, seed=args.seed)
+            source = f"historique synthétique (graine {args.seed})"
+        else:
+            cache_dir = Path(cfg.database).parent / "history"
+            history = load_history(public_client(cfg.exchange), cfg.exchange, cfg.symbols, cfg.market.timeframe,
+                                   history_start, end, cache_dir, refresh=args.refresh)
+            source = f"{cfg.exchange}, bougies {cfg.market.timeframe} (cache : {cache_dir})"
+        logger = logging.getLogger("tradeagent")
+        previous_level = logger.level
+        logger.setLevel(logging.CRITICAL)        # des milliers de cycles : pas de journal par cycle
+        try:
+            results = compare(cfg, agents, history, start, end, seed=args.seed)
+        finally:
+            logger.setLevel(previous_level)
+        market_pct = market_return_pct(cfg, history, start, end)
+    except ExchangeError as exc:
+        print(f"erreur de données : {exc}", file=sys.stderr)
+        return 2
+
+    day = lambda ts: datetime.fromtimestamp(ts, tz=timezone.utc).strftime("%Y-%m-%d %H:%M")  # noqa: E731
+    print(f"backtest du {day(start)} au {day(end)} UTC ({args.days} j), {source}")
+    print(f"mise {cfg.stake:g} {cfg.quote_currency}, un cycle toutes les {cfg.cycle_seconds / 60:g} min, "
+          f"frais {cfg.costs.fee_rate * 100:g} % + glissement {cfg.costs.slippage_bps:g} pb par ordre\n")
+    print(format_table(results, cfg, market_pct))
+    print("\nÀ lire avec prudence : les ordres sont exécutés au dernier prix de clôture (optimiste), le prix ne bouge pas "
+          "entre deux bougies (le kill switch et le drawdown ne voient donc que les clôtures), et une période passée ne dit rien de la suivante. Ce n'est pas un conseil de placement.")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s", datefmt="%H:%M:%S")
     load_env_file(".env")
     args = _parser().parse_args(argv)
-    handlers = {"run": cmd_run, "up": cmd_up, "status": cmd_status, "resume": cmd_resume, "reset": cmd_reset, "web": cmd_web}
+    handlers = {"run": cmd_run, "up": cmd_up, "status": cmd_status, "resume": cmd_resume, "reset": cmd_reset, "web": cmd_web,
+                "backtest": cmd_backtest}
     try:
         return handlers[args.command](args)
     except ConfigError as exc:

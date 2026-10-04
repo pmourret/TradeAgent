@@ -144,6 +144,14 @@ class Storage:
         rows = self._rows("SELECT * FROM equity ORDER BY rowid DESC LIMIT 1")
         return rows[0] if rows else None
 
+    def equity_series(self) -> list[float]:
+        """Toutes les valeurs d'equity enregistrées, dans l'ordre (pour le drawdown d'un backtest)."""
+        return [float(r[0]) for r in self._db.execute("SELECT equity FROM equity ORDER BY rowid")]
+
+    def fills_totals(self) -> dict[str, float]:
+        row = self._db.execute("SELECT COUNT(*) AS orders, COALESCE(SUM(fee), 0) AS fees FROM fills").fetchone()
+        return {"orders": int(row["orders"]), "fees": float(row["fees"])}
+
     def count(self, table: str) -> int:
         if table not in {"decisions", "fills", "equity", "events", "llm_calls"}:
             raise ValueError(table)

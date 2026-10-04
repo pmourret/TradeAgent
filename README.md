@@ -155,6 +155,42 @@ Limites : les versions ne sont pas vérifiées par empreinte (hachage) ; le fich
 
 Les protections de l'interface web restent en place, et la fenêtre en ajoute : chaque page tourne en bac à sable, sans accès à Node ni au processus principal ; elle ne peut ni naviguer ni charger quoi que ce soit hors de son serveur local, ni ouvrir de fenêtre, ni obtenir de permission ; un port n'est affiché que si c'est bien tradeagent qui y répond.
 
+## Backtest : rejouer une période passée
+
+Avant de comparer des agents sur des semaines de paper trading, on peut les faire tourner sur le passé. C'est gratuit (prix publics, aucune clé, aucun appel au LLM) et ça prend quelques secondes :
+
+```bash
+tradeagent backtest                      # 30 derniers jours, bougies de l'exchange de config.yaml
+tradeagent backtest --days 90 --end 2026-09-01
+tradeagent backtest --agents hold,buyhold,momentum
+tradeagent backtest --synthetic          # sans réseau : historique fabriqué, pour essayer la commande
+```
+
+Le backtest fait tourner **le vrai moteur** : mêmes garde-fous, même kill switch, mêmes frais et glissement que `tradeagent run`. Seuls changent l'horloge (simulée) et les prix (rejoués). Chaque agent tourne dans une base en mémoire : un backtest n'écrit dans aucune base de profil et ne gêne pas un bot en marche. L'historique téléchargé est gardé dans `data/history/` et seules les bougies manquantes sont retéléchargées (`--refresh` pour tout reprendre).
+
+| Agent | Ce qu'il fait |
+|---|---|
+| `hold` | Rien. La référence : finit toujours à la mise |
+| `buyhold` | Achat-conservation : achète autant de chaque symbole que les garde-fous le permettent, à parts égales, puis ne touche plus à rien |
+| `dca` | Achats programmés : 10 % de la mise par jour, en alternant les symboles, sans regarder le prix |
+| `momentum` | Suivi de tendance : achète ce qui a pris plus de 2 % en 24 h, vend ce qui baisse sur 24 h |
+| `chaos` | Aléatoire : montre ce que coûtent les frais quand on trade sans raison |
+| `llm-fake` | Faux LLM (décisions aléatoires) : vérifie que les coûts d'API entrent bien dans le résultat net |
+
+Colonnes : `net` = equity finale − mise − coûts d'API ; `drawdown` = la plus forte baisse depuis un plus-haut pendant la période ; `ordres` et `frais` = ce qui a été exécuté et payé. La dernière ligne donne le **marché** : ce qu'aurait rapporté un achat à parts égales de toute la mise au début, sans garde-fou. Ce n'est pas une stratégie jouable ici (les garde-fous gardent au moins 20 % en cash), c'est un repère.
+
+**À lire avec prudence.** Un backtest est optimiste par construction :
+
+- l'ordre est exécuté au prix que l'agent vient de voir (la clôture de la dernière bougie terminée), plus le glissement fixe de la config. Un vrai ordre part au prix d'après ;
+- le prix ne bouge qu'à chaque clôture de bougie : en bougies d'une heure, le backtest ne voit rien de ce qui se passe dans l'heure ;
+- le kill switch et le drawdown ne voient donc que les clôtures : une chute en cours de bougie, qui tuerait le bot en vrai, passe inaperçue. Morts et drawdown sont sous-estimés ;
+- le contrôle « prix périmé » des garde-fous ne joue pas en backtest ;
+- 30 jours de hausse ne disent rien des 30 suivants. Une stratégie qui gagne sur une période choisie après coup ne prouve rien.
+
+Garanties du code, testées : à un instant simulé, un agent ne voit jamais une bougie encore en cours (pas de vue sur le futur) ; un historique incomplet (début ou fin manquants, trou de plus de 6 bougies) est refusé avec la date du trou, au lieu de donner un backtest plus court que la période affichée ; un agent arrêté en route (`dead`, `halted`) est signalé sous le tableau avec sa raison, sa ligne ne se compare pas aux autres.
+
+Le vrai LLM n'est pas disponible en backtest : le rejouer coûterait de l'argent réel à chaque essai. C'est l'étape suivante (cache des réponses et plafond de dépense dédié).
+
 ## Comment l'agent est tenu
 
 Flux d'un cycle : `prix + bougies → agent → garde-fous → exchange → journal`, avec le kill switch qui surveille à chaque cycle, que l'agent soit appelé ou non.

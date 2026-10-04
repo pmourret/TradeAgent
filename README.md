@@ -163,6 +163,7 @@ Avant de comparer des agents sur des semaines de paper trading, on peut les fair
 tradeagent backtest                      # 30 derniers jours, bougies de l'exchange de config.yaml
 tradeagent backtest --days 90 --end 2026-09-01
 tradeagent backtest --agents hold,buyhold,momentum
+tradeagent backtest --days 30 --months 7     # 7 périodes de 30 jours à la suite, avec le cumul par agent
 tradeagent backtest --synthetic          # sans réseau : historique fabriqué, pour essayer la commande
 ```
 
@@ -177,6 +178,8 @@ Le backtest fait tourner **le vrai moteur** : mêmes garde-fous, même kill swit
 | `quant` | Le témoin : trade sur les signaux des modèles mathématiques, sans LLM donc sans loyer. Achète une tendance haussière à la taille du modèle de risque, sort quand la tendance se retourne ou que son niveau de sortie (qui suit le prix à la hausse) est touché |
 | `chaos` | Aléatoire : montre ce que coûtent les frais quand on trade sans raison |
 | `llm-fake` | Faux LLM (décisions aléatoires) : vérifie que les coûts d'API entrent bien dans le résultat net |
+
+Avec `--months N`, la commande rejoue N périodes consécutives et termine par un tableau de cumul : net total, nombre de mois positifs, pire mois. C'est lui qu'il faut regarder : un mois isolé ne dit presque rien. Chaque période repart de la mise, les gains ne sont pas réinvestis d'un mois sur l'autre.
 
 Colonnes : `net` = equity finale − mise − coûts d'API ; `drawdown` = la plus forte baisse depuis un plus-haut pendant la période ; `ordres` et `frais` = ce qui a été exécuté et payé. La dernière ligne donne le **marché** : ce qu'aurait rapporté un achat à parts égales de toute la mise au début, sans garde-fou. Ce n'est pas une stratégie jouable ici (les garde-fous gardent au moins 20 % en cash), c'est un repère.
 
@@ -230,7 +233,7 @@ L'agent reçoit un état compact (~1 500 tokens) : equity, positions, derniers o
 |---|---|
 | Liste de symboles | Tout symbole hors `symbols` est refusé |
 | Spot uniquement, ordres au marché | Pas de levier, pas de vente à découvert (on ne vend pas plus qu'on détient) |
-| `max_order_pct` / `max_position_pct` / `max_total_exposure_pct` | L'ordre est **réduit** à la plus petite limite, la raison est journalisée |
+| `max_order_pct` / `max_position_pct` / `max_total_exposure_pct` (40 % / 60 % / 80 % de l'equity) | L'ordre est **réduit** à la plus petite limite, la raison est journalisée |
 | `min_order_quote` | Pas d'ordres minuscules ; une vente qui laisserait de la poussière sort de la position en entier |
 | `max_buys_per_day`, `max_daily_loss_pct` | Bloquent les **achats** seulement. Sortir d'une position reste toujours possible |
 | `max_price_age_s` | Prix périmé : ordre refusé |
@@ -276,7 +279,7 @@ L'état est écrit en base SQLite : relancer le script ne ressuscite pas un bot 
 - **Le code calcule, le LLM interprète.** Pour chaque symbole, l'agent reçoit des indicateurs tout faits, calculés sur 31 jours de bougies (`market.candles`) : variations sur 1 h à 30 jours, écart du prix à ses moyennes sur 24 h, 7 jours et 30 jours (la tendance), RSI horaire et journalier (de 0 à 100 : au-dessus de 70 le prix a beaucoup monté, sous 30 beaucoup baissé), amplitude moyenne d'une bougie (pour distinguer un mouvement du bruit), et position du prix dans sa fourchette de 7 et 30 jours. Pour chaque position ouverte : prix de revient, gain ou perte latente, âge.
 - **Des modèles mathématiques dans le code** (`signals.py`), qui tournent à chaque cycle, gratuitement, et alimentent tous les agents avec les mêmes signaux : **régime de tendance** (hausse, baisse ou sans direction, d'après les moyennes de 7 et 30 jours), **prévision de volatilité** (l'ampleur type du mouvement sur 24 h), **risque et taille** (une distance de sortie hors du bruit, et la mise qui ne perd qu'environ 1 % de l'equity si cette sortie est touchée). Leurs réglages sont des valeurs classiques fixées à l'avance, pas ajustées sur les mois de backtest. L'agent est réveillé quand un régime passe à la hausse, ou à la baisse sur un symbole qu'il détient. Le témoin `quant` trade sur ces mêmes signaux sans LLM : c'est la référence à battre, car un agent LLM qui ne fait pas mieux que lui n'apporte rien par-dessus les modèles.
 - **Un plan de sortie à chaque achat.** En achetant, l'agent donne le prix sous lequel sa raison d'acheter ne tient plus (`exit_below`). Le code le borne (sous le prix, au-delà du bruit d'une bougie, à 25 % au plus ; s'il n'en donne pas, le code en pose un), le garde avec la position, le lui remontre à chaque appel avec sa raison d'achat, et **le réveille quand le prix franchit ce niveau**. Le code ne vend pas à sa place : c'est l'agent qui décide, une fois réveillé. Il peut déplacer le niveau en répondant « hold » sur ce symbole. Un `reset` efface les plans.
-- L'agent reçoit dans ses données les vrais frais et glissement de la config, son loyer cumulé et son equity nette. Le prompt est versionné (`PROMPT_VERSION` dans `llm_agent.py`, version en cours : 8) ; la version utilisée est écrite en base.
+- L'agent reçoit dans ses données les vrais frais et glissement de la config, son loyer cumulé et son equity nette. Le prompt est versionné (`PROMPT_VERSION` dans `llm_agent.py`, version en cours : 9) ; la version utilisée est écrite en base.
 - `tradeagent status` affiche : `résultat net = equity − mise − coûts API de cette vie`.
 
 Ordre de grandeur avec le prompt actuel et Haiku 4.5 (1 $/5 $ par million de tokens) : environ 0,002 € par appel, soit ~0,05 €/jour et ~1,5 €/mois à un appel par heure. C'est une estimation à vérifier avec `tradeagent status` pendant la phase paper ; sur une mise de 50 €, ce coût compte dans le résultat.

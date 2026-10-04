@@ -12,7 +12,7 @@ from pathlib import Path
 
 from .advice import idle_advice
 from .app import AGENT_KINDS, build_agent, build_engine, build_feed, reset_life
-from .backtest import (BACKTEST_AGENTS, DEFAULT_AGENTS, compare, format_table, market_return_pct, run_backtest,
+from .backtest import (BACKTEST_AGENTS, DEFAULT_AGENTS, compare, format_summary, format_table, market_return_pct, run_backtest,
                        warmup_seconds)
 from .budget import InferenceBudget, day_start_ts
 from .config import ConfigError, load_config
@@ -77,6 +77,9 @@ def _parser() -> argparse.ArgumentParser:
     backtest = sub.add_parser("backtest", parents=[with_config],
                               help="rejoue une période passée avec le vrai moteur et compare des stratégies (gratuit)")
     backtest.add_argument("--days", type=int, default=30, help="durée de la période rejouée, en jours (défaut : 30)")
+    backtest.add_argument("--months", type=int, default=1, metavar="N",
+                          help="rejoue N périodes de --days jours à la suite, la dernière finissant à --end, "
+                               "et affiche le cumul (défaut : 1)")
     backtest.add_argument("--end", default=None, metavar="AAAA-MM-JJ",
                           help="fin de la période, à minuit UTC (défaut : maintenant)")
     backtest.add_argument("--agents", default=",".join(DEFAULT_AGENTS),
@@ -281,12 +284,13 @@ def _lock_llm_cache(cfg) -> InstanceLock:
                           "(deux à la fois dépasseraient le plafond de dépense).") from None
 
 
-def _backtest_llm_client(cfg, args: argparse.Namespace, history, start: float, end: float) -> CachingLLMClient | None:
+def _backtest_llm_client(cfg, args: argparse.Namespace, history, windows: list[tuple[float, float]]) -> CachingLLMClient | None:
     """Prépare le vrai LLM pour un backtest : estimation à blanc, puis confirmation. None = refusé, rien dépensé."""
     cost_of = InferenceBudget(cfg.llm, Storage(":memory:")).cost_eur
     cache = ReplyCache(_llm_cache_path(cfg))
     estimate = EstimatingClient(cache, cfg.llm.model, cost_of)
-    run_backtest(cfg, "llm", history, start, end, seed=args.seed, llm_client=estimate)
+    for start, end in windows:
+        run_backtest(cfg, "llm", history, start, end, seed=args.seed, llm_client=estimate)
 
     to_pay = estimate.calls - estimate.cached
     print(f"vrai LLM ({cfg.llm.model}) : environ {estimate.calls} appels sur la période, dont {estimate.cached} déjà en cache.")
@@ -334,6 +338,8 @@ def cmd_backtest(args: argparse.Namespace) -> int:
                           f"(choix : {', '.join(BACKTEST_AGENTS)})")
     if args.days < 1:
         raise ConfigError("--days doit valoir au moins 1")
+    if not 1 <= args.months <= 24:
+        raise ConfigError("--months doit être compris entre 1 et 24")
     llm_client = None
     step = TIMEFRAME_SECONDS[cfg.market.timeframe]
     if args.end:
@@ -346,7 +352,9 @@ def cmd_backtest(args: argparse.Namespace) -> int:
     end = end // step * step                     # on s'arrête sur une bougie terminée
     if end > time.time():
         raise ConfigError("--end est dans le futur")
-    start = end - args.days * 86_400
+    span = args.days * 86_400
+    windows = [(end - (i + 1) * span, end - i * span) for i in reversed(range(args.months))]     # de la plus ancienne à la plus récente
+    start = windows[0][0]
     history_start = start - warmup_seconds(cfg)
 
     try:
@@ -363,24 +371,33 @@ def cmd_backtest(args: argparse.Namespace) -> int:
         logger.setLevel(logging.CRITICAL)        # des milliers de cycles : pas de journal par cycle
         lock = _lock_llm_cache(cfg) if real_llm else None     # gardé de l'estimation à la fin du backtest
         try:
-            llm_client = _backtest_llm_client(cfg, args, history, start, end) if real_llm else None
+            llm_client = _backtest_llm_client(cfg, args, history, windows) if real_llm else None
             if real_llm and llm_client is None:
                 return 1                         # refusé à la confirmation : rien n'a été dépensé
-            results = compare(cfg, agents, history, start, end, seed=args.seed, llm_client=llm_client)
+            per_window = [compare(cfg, agents, history, s, e, seed=args.seed, llm_client=llm_client) for s, e in windows]
         finally:
             logger.setLevel(previous_level)
             if lock is not None:
                 lock.release()
-        market_pct = market_return_pct(cfg, history, start, end)
+        markets = [market_return_pct(cfg, history, s, e) for s, e in windows]
     except ExchangeError as exc:
         print(f"erreur de données : {exc}", file=sys.stderr)
         return 2
 
     day = lambda ts: datetime.fromtimestamp(ts, tz=timezone.utc).strftime("%Y-%m-%d %H:%M")  # noqa: E731
-    print(f"backtest du {day(start)} au {day(end)} UTC ({args.days} j), {source}")
+    periods = f"{args.months} périodes de {args.days} j" if args.months > 1 else f"{args.days} j"
+    print(f"backtest du {day(start)} au {day(end)} UTC ({periods}), {source}")
     print(f"mise {cfg.stake:g} {cfg.quote_currency}, un cycle toutes les {cfg.cycle_seconds / 60:g} min, "
           f"frais {cfg.costs.fee_rate * 100:g} % + glissement {cfg.costs.slippage_bps:g} pb par ordre\n")
-    print(format_table(results, cfg, market_pct))
+    for (s, e), results, market_pct in zip(windows, per_window, markets):
+        if args.months > 1:
+            print(f"-- du {day(s)} au {day(e)} UTC")
+        print(format_table(results, cfg, market_pct))
+        if args.months > 1:
+            print()
+    if args.months > 1:
+        print(f"== cumul des {args.months} périodes")
+        print(format_summary(per_window, cfg))
     if llm_client is not None:
         failed = (f", {llm_client.failed_calls} appels ratés comptés au pire coût" if llm_client.failed_calls else "")
         print(f"vrai LLM : {llm_client.paid_calls} appels payés ({llm_client.spent_run:.4f} € réels, plafond "

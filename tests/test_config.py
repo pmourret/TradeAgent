@@ -11,7 +11,8 @@ def test_shipped_config_loads():
     cfg = load_config(SHIPPED)
     assert cfg.mode == "paper"
     assert cfg.symbols == ("BTC/EUR", "ETH/EUR")
-    assert cfg.guardrails.max_order_pct == 20
+    assert cfg.guardrails.max_order_pct == 40 and cfg.guardrails.max_position_pct == 60      # desserrés le 2026-10-04
+    assert cfg.guardrails.max_total_exposure_pct == 80                                       # 20 % de cash gardés
 
 
 def test_shipped_config_targets_the_exchange_and_its_taker_fee():

@@ -218,3 +218,37 @@ def test_la_commande_backtest_rend_le_niveau_de_journal(tmp_path, monkeypatch):
     return
     assert cli.main(["backtest", "--synthetic", "--days", "1", "--agents", "chaos", "--end", "2025-10-01"]) == 0
     assert logger.level == logging.WARNING
+
+
+def test_la_commande_rejoue_plusieurs_periodes_et_affiche_le_cumul(tmp_path, monkeypatch, capsys):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "config.yaml").write_text("database: data/agent.db\nstake: 50\n", encoding="utf-8")
+    code = cli.main(["backtest", "--synthetic", "--days", "2", "--months", "3", "--agents", "hold,dca",
+                     "--end", "2025-10-07"])
+    out = capsys.readouterr().out
+    assert code == 0
+    assert "backtest du 2025-10-01 00:00 au 2025-10-07 00:00 UTC (3 périodes de 2 j)" in out
+    for window in ("-- du 2025-10-01 00:00 au 2025-10-03 00:00", "-- du 2025-10-03 00:00 au 2025-10-05 00:00",
+                   "-- du 2025-10-05 00:00 au 2025-10-07 00:00"):
+        assert window in out
+    assert out.index("2025-10-01 00:00 au 2025-10-03") < out.index("2025-10-05 00:00 au 2025-10-07")     # de la plus ancienne à la plus récente
+    assert "== cumul des 3 périodes" in out and "Chaque période repart de la mise" in out
+    summary = out.split("== cumul des 3 périodes")[1]
+    assert "hold" in summary and "0/3" in summary                               # hold : jamais de mois positif
+    for bad in ("0", "25"):
+        assert cli.main(["backtest", "--synthetic", "--months", bad]) == 2
+
+
+def test_le_cumul_additionne_chaque_periode():
+    from tradeagent.backtest import BacktestResult, format_summary
+
+    def result(agent, net, orders=1, status="alive"):
+        return BacktestResult(agent=agent, status=status, cycles=1, final_equity=50 + net, api_cost=0.1, net_result=net,
+                              return_pct=net / 50 * 100, max_drawdown_pct=1.0, orders=orders, fees=0.05)
+
+    table = format_summary([[result("llm", 2.0), result("quant", -1.0)],
+                            [result("llm", -0.5, orders=3), result("quant", 1.0, status="dead")]], default_cfg(stake=50.0))
+    llm, quant = table.splitlines()[1:3]
+    assert llm.split()[:6] == ["llm", "+1.50", "+3.00%", "1/2", "-1.00%", "4"]  # net, %, mois positifs, pire mois, ordres
+    assert "0.100" in llm and "0.200" in llm                                    # frais et API additionnés
+    assert quant.split()[:4] == ["quant", "+0.00", "+0.00%", "1/2"] and "arrêté 1 fois" in quant

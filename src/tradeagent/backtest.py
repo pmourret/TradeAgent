@@ -153,6 +153,21 @@ def compare(cfg: Config, agents: list[str] | tuple[str, ...], history: dict[str,
             for kind in agents]
 
 
+def format_summary(per_window: list[list[BacktestResult]], cfg: Config) -> str:
+    """Le cumul de plusieurs périodes, agent par agent : ce qu'il faut regarder plutôt qu'un mois isolé."""
+    lines = [f"{'agent':<10} {'net total':>10} {'total %':>9} {'mois +':>7} {'pire mois':>10} {'ordres':>7} {'frais':>7} {'API':>7}"]
+    for index, first in enumerate(per_window[0]):
+        rows = [window[index] for window in per_window]
+        net = sum(r.net_result for r in rows)
+        stopped = sum(r.status != "alive" for r in rows)
+        lines.append(f"{first.agent:<10} {net:>+10.2f} {net / cfg.stake * 100:>+8.2f}% {sum(r.net_result > 0 for r in rows):>4d}/{len(rows):<2d} "
+                     f"{min(r.return_pct for r in rows):>+9.2f}% {sum(r.orders for r in rows):>7d} "
+                     f"{sum(r.fees for r in rows):>7.3f} {sum(r.api_cost for r in rows):>7.3f}"
+                     + (f"   ! arrêté {stopped} fois" if stopped else ""))
+    lines.append("Chaque période repart de la mise : les gains ne sont pas réinvestis d'un mois sur l'autre.")
+    return "\n".join(lines)
+
+
 def format_table(results: list[BacktestResult], cfg: Config, market_pct: float) -> str:
     ccy = cfg.quote_currency
     lines = [f"{'agent':<10} {'état':<7} {'equity':>9} {'net':>9} {'net %':>8} {'drawdown':>9} {'ordres':>7} {'frais':>7} {'API':>7}"]

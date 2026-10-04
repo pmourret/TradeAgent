@@ -231,7 +231,7 @@ def test_le_prompt_donne_les_vrais_frais_le_loyer_et_les_bornes_de_reveil():
     assert "usually the right one" not in system and "counts as failure" in system
     assert "api_safety_caps_left" in system and "api_cost_per_call" in system
     assert "next_check_minutes" in system and "wake_if_move_pct" in system
-    assert storage.get(PROMPT_VERSION_KEY) == PROMPT_VERSION == 8
+    assert storage.get(PROMPT_VERSION_KEY) == PROMPT_VERSION == 9
 
 
 def test_les_cles_de_reveil_sont_lues_avec_prudence():
@@ -965,3 +965,21 @@ def test_le_prompt_explique_les_modeles_et_les_transmet():
     assert data["market"]["BTC/EUR"]["models"] == {"trend": {"regime": "up", "score": 1.0},
                                                    "risk": {"exit_pct": 5.0, "size_pct": 20.0}}
     assert '"models"' in system and "size_pct" in system and "turns \"up\"" in system
+
+
+def test_avec_les_modeles_le_prompt_n_envoie_plus_ce_qu_ils_resument():
+    from dataclasses import replace
+
+    full = {"last": 1.0, "change_pct": {"1h": 0.1}, "high_24h": 2.0, "low_24h": 0.5, "atr_pct": 1.2,
+            "range": {"7d": {"high": 3.0, "low": 0.4, "pos_pct": 23, "from_high_pct": -66.67}},
+            "daily_closes": [1.0, 2.0, 3.0], "closes": [float(i) for i in range(24)],
+            "models": {"trend": {"regime": "up", "score": 1.0}}}
+    agent, client, clock, *_ = make([reply(HOLD)])
+    agent.decide(replace(priced(clock()), market={"BTC/EUR": full, "ETH/EUR": {"last": 1.0}}))
+    system, user, _ = client.calls[0]
+    btc = json.loads(user.split("\n", 1)[1])["market"]["BTC/EUR"]
+    assert btc == {"last": 1.0, "change_pct": {"1h": 0.1}, "range": {"7d": {"pos_pct": 23, "from_high_pct": -66.67}},
+                   "models": {"trend": {"regime": "up", "score": 1.0}}}
+    assert len(system) < 4_300                                                  # le prompt système reste court : il se paie à chaque appel
+    for kept in ("counts as failure", "round_trip_pct", "net_equity", "exit_below", "size_pct", "untrusted"):
+        assert kept in system, kept

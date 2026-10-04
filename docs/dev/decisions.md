@@ -21,6 +21,8 @@ Ne pas rouvrir une décision sans raison. Toute nouvelle décision de Pierre s'a
 | Caisse de l'utilisateur : part des gains mise de côté, configurable, 50/50 pour commencer (2026-10-04) | Décision de Pierre. Écriture comptable, aucun retrait ni transfert dans le code |
 | Un bot à l'arrêt sans issue ne meurt pas tout seul : il est signalé, le code dresse le bilan et conseille, l'utilisateur décide (2026-10-04) | Décision de Pierre. Il juge au vu de ce que l'agent a rapporté et consommé |
 | Réveil sur mouvement de prix obligatoire quand l'agent dort en détenant une position (2026-10-04) | Décision de Pierre. Sinon la position n'est surveillée que par le kill switch pendant le sommeil |
+| Tailles desserrées : un ordre jusqu'à 40 % de l'equity, 60 % par symbole, 80 % d'exposition totale inchangés (2026-10-04) | Décision de Pierre, sur proposition de Claude : à 20 % par ordre, les positions de 10 € ne pouvaient pas couvrir le loyer, et le modèle de risque conseillait souvent davantage. Essai gratuit du témoin `quant` sur sept mois : +16,6 % en somme contre +9,9 %, pire mois −2,8 % contre −2,0 % |
+| Les outils d'analyse sont des modèles mathématiques dans le code, qui lisent les prix, calculent et alimentent tous les agents (2026-10-04) | Décision de Pierre. Le code calcule, les agents décident ; le témoin `quant` (sans LLM) est la référence à battre |
 | L'application reste en lecture seule pour l'instant ; réglage de la température de l'agent à terme (2026-10-04) | Décision de Pierre |
 | Paliers : 15 % / 25 % / mort à 40 % de drawdown ou 50 % de perte totale | On réduit la voilure avant la mort |
 | Quarantaine **asynchrone** (future) | Attendre la confirmation ne doit pas bloquer les contrôles du kill switch |

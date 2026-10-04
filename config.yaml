@@ -23,8 +23,8 @@ costs:
 # Garde-fous : appliqués en code entre l'agent et l'exchange.
 # L'agent ne peut ni les lire en écriture ni les contourner.
 guardrails:
-  max_order_pct: 20            # taille max d'un ordre, en % de l'equity
-  max_position_pct: 40         # exposition max sur un seul symbole
+  max_order_pct: 40            # taille max d'un ordre, en % de l'equity
+  max_position_pct: 60         # exposition max sur un seul symbole
   max_total_exposure_pct: 80   # exposition totale max (garde au moins 20 % en cash)
   min_order_quote: 5           # ordre minimum, en monnaie de cotation
   max_buys_per_day: 10         # les ventes ne sont jamais bloquées par ce plafond

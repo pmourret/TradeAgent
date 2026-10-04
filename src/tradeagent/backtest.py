@@ -34,8 +34,8 @@ from .replay import ReplayPriceFeed, SimClock
 from .storage import Storage
 from .strategies import STRATEGIES
 
-BACKTEST_AGENTS = ("hold", "buyhold", "dca", "momentum", "chaos", "llm-fake", "llm")
-DEFAULT_AGENTS = ("hold", "buyhold", "dca", "momentum", "chaos")
+BACKTEST_AGENTS = ("hold", "buyhold", "dca", "momentum", "quant", "chaos", "llm-fake", "llm")
+DEFAULT_AGENTS = ("hold", "buyhold", "dca", "momentum", "quant", "chaos")
 STOPPED = ("dead", "halted", "stopped")
 
 

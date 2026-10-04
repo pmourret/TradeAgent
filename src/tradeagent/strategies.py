@@ -109,4 +109,53 @@ class MomentumAgent:
         return Decision(HOLD, reasoning="momentum: pas de signal")
 
 
-STRATEGIES = {"buyhold": BuyAndHoldAgent, "dca": DcaAgent, "momentum": MomentumAgent}
+class QuantAgent:
+    """Le témoin : trade sur les signaux des modèles mathématiques (`signals.py`), sans LLM, donc sans loyer.
+
+    Achète un symbole quand son régime de tendance est à la hausse, à la taille que donne le modèle de risque ;
+    vend quand le régime passe à la baisse ou quand le prix touche son niveau de sortie, qui suit le prix à la
+    hausse. C'est la référence à battre pour tout agent LLM qui reçoit les mêmes signaux : s'il ne fait pas mieux,
+    il n'apporte rien par-dessus les modèles.
+    """
+
+    name = "quant"
+
+    def __init__(self) -> None:
+        self._stops: dict[str, float] = {}
+
+    @staticmethod
+    def _models(view: MarketView, symbol: str) -> dict:
+        return view.market.get(symbol, {}).get("models") or {}
+
+    def decide(self, view: MarketView) -> Decision:
+        minimum = view.limits.get("min_order_quote", 0.0)
+        for symbol in sorted(view.positions):          # sortir d'abord : une vente n'est jamais bloquée
+            position = view.positions[symbol]
+            held, price = position["value"], position["price"]
+            if held < max(minimum, 0.01):
+                self._stops.pop(symbol, None)
+                continue
+            models = self._models(view, symbol)
+            exit_pct = (models.get("risk") or {}).get("exit_pct")
+            if exit_pct:                               # le niveau de sortie suit le prix à la hausse, jamais à la baisse
+                self._stops[symbol] = max(self._stops.get(symbol, 0.0), price * (1 - exit_pct / 100))
+            stop = self._stops.get(symbol)
+            if (models.get("trend") or {}).get("regime") == "down":
+                return Decision(SELL, symbol, held, "quant: tendance à la baisse, on sort")
+            if stop and price <= stop:
+                return Decision(SELL, symbol, held, f"quant: niveau de sortie touché ({stop:.5g})")
+        for symbol in sorted(view.positions):
+            if view.positions[symbol]["value"] >= max(minimum, 0.01):
+                continue
+            models = self._models(view, symbol)
+            risk = models.get("risk") or {}
+            if (models.get("trend") or {}).get("regime") != "up" or not risk:
+                continue
+            amount = min(buy_room(view, symbol), round(view.equity * risk["size_pct"] / 100, 2))
+            if amount >= minimum and amount > 0:
+                self._stops[symbol] = view.positions[symbol]["price"] * (1 - risk["exit_pct"] / 100)
+                return Decision(BUY, symbol, amount, f"quant: tendance à la hausse, sortie à -{risk['exit_pct']:g} %")
+        return Decision(HOLD, reasoning="quant: pas de signal")
+
+
+STRATEGIES = {"buyhold": BuyAndHoldAgent, "dca": DcaAgent, "momentum": MomentumAgent, "quant": QuantAgent}

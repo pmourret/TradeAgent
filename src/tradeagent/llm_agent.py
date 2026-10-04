@@ -39,7 +39,7 @@ THESIS_CHARS = 160
 KEPT_CLOSES = 6                       # les indicateurs résument le reste : inutile de payer 24 clôtures par symbole
 IDLE_KEY = "llm_idle"                 # {since, cause} : l'agent n'est plus appelé faute d'ordre possible
 PROMPT_VERSION_KEY = "llm_prompt_version"
-PROMPT_VERSION = 7                    # à incrémenter à chaque changement de SYSTEM_PROMPT ou des données envoyées
+PROMPT_VERSION = 8                    # à incrémenter à chaque changement de SYSTEM_PROMPT ou des données envoyées
 MIN_WAKE_MOVE_PCT, MAX_WAKE_MOVE_PCT = 0.5, 50.0
 
 SYSTEM_PROMPT = """You manage a very small spot crypto portfolio (the quote currency is given in the data). \
@@ -66,6 +66,14 @@ one candle, in percent: a smaller move is noise; "range" = high, low and where t
 ("pos_pct": 0 = at the low, 100 = at the high). Read the longer horizons first: a one-hour pop inside a falling trend \
 is not a trend. Each position you hold shows "entry_price", "pnl_pct" and "held_hours". Judge a position on where the \
 market is heading, not on getting back to your entry price: selling a loser is a valid, often correct decision.
+
+"models" per symbol are the outputs of mathematical models run by the code on every cycle: "trend" = the regime \
+("up", "down" or "range") and a score from -1 to 1 built from the 7d and 30d averages; "vol" = the typical size of \
+the move over the next 24h ("move_24h_pct", one standard deviation) and whether volatility is "low", "normal" or \
+"high" versus the month; "risk" = an exit distance beyond normal noise ("exit_pct", two typical daily moves) and the \
+position size, in percent of equity, that loses about 1% of equity if that exit is hit ("size_pct"). Use them as your \
+starting point: buying against a "down" regime or sizing far above "size_pct" needs a stated reason. You are also \
+woken when a regime turns "up", or turns "down" on a symbol you hold.
 
 risk_tier in the data: "normal" = standard limits; "cautious" = your net equity is down from its peak (trading losses \
 or your own running cost), limits are reduced and you are called less often; "defensive" = buys are blocked, only sells \
@@ -227,6 +235,8 @@ class LLMAgent:
         for symbol, plan in self._plans(view).items():
             if view.positions[symbol]["price"] <= plan["exit_below"]:
                 return None                               # son propre niveau de sortie est franchi : à lui de décider
+        if self._regime_event(view, wake.get("regimes") or {}):
+            return None                                   # un modèle a changé d'avis sur ce qui compte
         move = wake.get("move_pct")
         if move:
             for symbol, reference in (wake.get("prices") or {}).items():
@@ -234,6 +244,27 @@ class LLMAgent:
                 if price and reference and abs(price / reference - 1) * 100 >= move:
                     return None                           # le mouvement demandé a eu lieu
         return f"sommeil choisi par l'agent : encore {(wake['at'] - now) / 60:.0f} min"
+
+    @staticmethod
+    def _regimes(view: MarketView) -> dict[str, str]:
+        """Le régime de tendance de chaque symbole d'après les modèles (vide si l'historique ne suffit pas)."""
+        out = {}
+        for symbol, summary in view.market.items():
+            regime = ((summary.get("models") or {}).get("trend") or {}).get("regime")
+            if regime:
+                out[symbol] = regime
+        return out
+
+    def _regime_event(self, view: MarketView, before: dict[str, str]) -> bool:
+        """Vrai si un régime a changé d'une façon qui appelle une décision : un symbole passe à la hausse (occasion
+        d'acheter) ou un symbole détenu passe à la baisse (raison de sortir). Les allers-retours vers « range » ne
+        réveillent pas : ils sont fréquents et ne demandent rien, chaque réveil se paie."""
+        for symbol, regime in self._regimes(view).items():
+            if regime == before.get(symbol):
+                continue
+            if regime == "up" or (regime == "down" and view.positions.get(symbol, {}).get("value", 0.0) > 0):
+                return True
+        return False
 
     def _plans(self, view: MarketView) -> dict[str, dict[str, Any]]:
         """Les plans de sortie des positions encore ouvertes (un plan sans position est oublié)."""
@@ -263,8 +294,9 @@ class LLMAgent:
         if decision.action == "hold" and symbol not in plans:
             return                                        # rien à déplacer : pas de position suivie sur ce symbole
         atr = _number((view.market.get(symbol) or {}).get("atr_pct")) or 1.0
-        if level is None:
-            level = price * (1 - max(DEFAULT_EXIT_ATR * atr, 3.0) / 100)      # achat sans plan : le code en pose un
+        if level is None:                                 # achat sans plan : le code en pose un
+            model_exit = _number((((view.market.get(symbol) or {}).get("models") or {}).get("risk") or {}).get("exit_pct"))
+            level = price * (1 - (model_exit or max(DEFAULT_EXIT_ATR * atr, 3.0)) / 100)
         highest = price * (1 - atr / 100)                 # au moins une amplitude moyenne sous le prix
         lowest = price * (1 - MAX_EXIT_DISTANCE_PCT / 100)
         level = min(max(level, lowest), highest)
@@ -318,6 +350,7 @@ class LLMAgent:
             "tier": view.risk_tier,
             "move_pct": move,
             "prices": {s: p["price"] for s, p in view.positions.items()},
+            "regimes": self._regimes(view),
         })
 
     # -- prompt ----------------------------------------------------------

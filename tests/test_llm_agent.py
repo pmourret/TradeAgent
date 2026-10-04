@@ -231,7 +231,7 @@ def test_le_prompt_donne_les_vrais_frais_le_loyer_et_les_bornes_de_reveil():
     assert "usually the right one" not in system and "counts as failure" in system
     assert "api_safety_caps_left" in system and "api_cost_per_call" in system
     assert "next_check_minutes" in system and "wake_if_move_pct" in system
-    assert storage.get(PROMPT_VERSION_KEY) == PROMPT_VERSION == 7
+    assert storage.get(PROMPT_VERSION_KEY) == PROMPT_VERSION == 8
 
 
 def test_les_cles_de_reveil_sont_lues_avec_prudence():
@@ -645,7 +645,7 @@ def test_l_agent_peut_changer_les_defauts_dans_les_bornes():
     agent, _, clock, storage, _ = make([sleepy(minutes=120), sleepy(move=5), sleepy(minutes=1, move=0.1)], **EVENTS)
     agent.decide(priced(clock()))
     assert storage.get(WAKE_KEY) == {"at": clock() + 7_200, "tier": "normal", "move_pct": 2.0,
-                                     "prices": {"BTC/EUR": 60_000.0, "ETH/EUR": 2_500.0}}
+                                     "prices": {"BTC/EUR": 60_000.0, "ETH/EUR": 2_500.0}, "regimes": {}}
     clock.advance(7_200)
     agent.decide(priced(clock()))
     wake = storage.get(WAKE_KEY)
@@ -908,3 +908,60 @@ def test_une_vente_sans_montant_vend_toute_la_position():
         agent, *_ = make([bad])
         with pytest.raises(InvalidDecision):
             agent.decide(priced(START, positions=HELD))
+
+
+# -- les modèles alimentent l'agent ---------------------------------------------------------------------------------
+
+def with_models(view_, btc="up", eth="range", exit_pct=None):
+    from dataclasses import replace
+
+    def models(regime):
+        out = {"trend": {"regime": regime, "score": 1.0}}
+        if exit_pct:
+            out["risk"] = {"exit_pct": exit_pct, "size_pct": 20.0}
+        return out
+
+    market = {"BTC/EUR": {**view_.market["BTC/EUR"], "models": models(btc)},
+              "ETH/EUR": {**view_.market["ETH/EUR"], "models": models(eth)}}
+    return replace(view_, market=market)
+
+
+def test_un_changement_de_regime_reveille_l_agent():
+    from tradeagent.llm_agent import WAKE_KEY
+
+    agent, client, clock, storage, _ = make([sleepy(minutes=1_440), reply(HOLD)])
+    agent.decide(with_models(priced(clock()), btc="up"))
+    assert storage.get(WAKE_KEY)["regimes"] == {"BTC/EUR": "up", "ETH/EUR": "range"}
+    clock.advance(3_600)
+    assert agent.decide(with_models(priced(clock()), btc="up")).skipped         # rien n'a changé : il dort
+    assert agent.decide(with_models(priced(clock()), btc="range")).skipped      # retour à « range » : rien à décider
+    assert agent.decide(with_models(priced(clock()), btc="down")).skipped       # baisse d'un symbole non détenu : non plus
+    assert not agent.decide(with_models(priced(clock()), eth="up")).skipped     # un symbole passe à la hausse : occasion
+    assert len(client.calls) == 2
+
+
+def test_un_symbole_detenu_qui_passe_a_la_baisse_reveille_l_agent():
+    agent, client, clock, *_ = make([sleepy(minutes=1_440, move=3), reply(HOLD)])
+    agent.decide(with_models(priced(clock(), positions=HELD), btc="up"))
+    clock.advance(3_600)
+    assert agent.decide(with_models(priced(clock(), positions=HELD), btc="range")).skipped
+    assert not agent.decide(with_models(priced(clock(), positions=HELD), btc="down")).skipped
+    assert len(client.calls) == 2
+
+
+def test_sans_plan_donne_la_sortie_par_defaut_est_celle_du_modele_de_risque():
+    from tradeagent.llm_agent import PLAN_KEY
+
+    agent, _, clock, storage, _ = make([decision_reply("buy", "BTC/EUR", 10)])
+    agent.decide(with_models(with_market(priced(clock(), btc=60_000.0)), exit_pct=5.0))
+    assert storage.get(PLAN_KEY)["BTC/EUR"]["exit_below"] == 57_000.0           # 5 % sous le prix, pas 3 amplitudes
+
+
+def test_le_prompt_explique_les_modeles_et_les_transmet():
+    agent, client, clock, *_ = make([reply(HOLD)])
+    agent.decide(with_models(priced(clock()), exit_pct=5.0))
+    system, user, _ = client.calls[0]
+    data = json.loads(user.split("\n", 1)[1])
+    assert data["market"]["BTC/EUR"]["models"] == {"trend": {"regime": "up", "score": 1.0},
+                                                   "risk": {"exit_pct": 5.0, "size_pct": 20.0}}
+    assert '"models"' in system and "size_pct" in system and "turns \"up\"" in system

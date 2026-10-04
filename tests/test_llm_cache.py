@@ -277,14 +277,20 @@ def test_le_vrai_llm_exige_un_plafond_raisonnable(workdir, capsys):
 
 def test_la_commande_applique_le_plafond_du_backtest_et_pas_un_autre(workdir, monkeypatch, capsys):
     monkeypatch.setenv("ANTHROPIC_API_KEY", "clé-de-test")
-    inner = Inner(input_tokens=5_000)                                       # appels chers : environ 0.0047 EUR pièce
+    # Config du test : budget simulé du jour large (c'est le plafond RÉEL qu'on vérifie) et arrêt après 2 erreurs.
+    (workdir / "config.yaml").write_text(
+        "database: data/agent.db\nstake: 50\nllm: {daily_budget_eur: 5, total_budget_eur: 10}\n"
+        "killswitch: {max_consecutive_errors: 2}\n", encoding="utf-8")
+    # Faux client qui facture 0,045 EUR par appel, bien plus que le pire cas estimé d'après la taille du prompt :
+    # le plafond peut alors être dépassé d'UN appel au plus (l'écart d'estimation du dernier), jamais davantage.
+    inner = Inner(input_tokens=50_000)
     monkeypatch.setattr(cli, "AnthropicClient", lambda model, **kwargs: inner)
-    assert cli.main([*ARGS, "--max-api-eur", "0.06", "--yes"]) == 0
+    assert cli.main([*ARGS, "--max-api-eur", "0.30", "--yes"]) == 0
     out = capsys.readouterr().out
-    assert 1 <= inner.calls < 24                                            # arrêté par le plafond, pas par la fin
+    assert 1 <= inner.calls <= 7                                            # arrêté par le plafond, pas par la fin (24)
     assert "halted" in out and "plafond de dépense réelle de ce backtest" in out
     paid = float(out.split("appels payés (")[1].split(" €")[0])
-    assert 0 < paid <= 0.06
+    assert 0 < paid <= 0.30 + 0.046
 
 
 def test_la_commande_applique_le_plafond_cumule_de_la_config(workdir, monkeypatch, capsys):
@@ -293,15 +299,19 @@ def test_la_commande_applique_le_plafond_cumule_de_la_config(workdir, monkeypatc
     cache.parent.mkdir(parents=True)
     usage = {"input_tokens": 1, "output_tokens": 1, "cache_read_tokens": 0, "cache_write_tokens": 0}
     row = {"call": "1", "key": "ancien", "ts": 1, "model": "m", "text": HOLD, "usage": usage}
-    cache.write_text(json.dumps({**row, "cost_eur": 9.94}) + "\n", encoding="utf-8")
-    inner = Inner(input_tokens=5_000)                                       # environ 0.0047 EUR pièce
+    cache.write_text(json.dumps({**row, "cost_eur": 9.80}) + "\n", encoding="utf-8")
+    # Config du test : budget simulé du jour large (c'est le plafond RÉEL qu'on vérifie) et arrêt après 2 erreurs.
+    (workdir / "config.yaml").write_text(
+        "database: data/agent.db\nstake: 50\nllm: {daily_budget_eur: 5, total_budget_eur: 10}\n"
+        "killswitch: {max_consecutive_errors: 2}\n", encoding="utf-8")
+    inner = Inner(input_tokens=50_000)                                      # environ 0.045 EUR pièce, voir ci-dessus
     monkeypatch.setattr(cli, "AnthropicClient", lambda model, **kwargs: inner)
     assert cli.main([*ARGS, "--max-api-eur", "0.50", "--yes"]) == 0
     out = capsys.readouterr().out
-    assert 1 <= inner.calls < 24                                            # arrêté par llm.total_budget_eur (10 EUR)
-    assert "déjà payé par les backtests précédents : 9.94 € sur 10.00 €" in out
+    assert 1 <= inner.calls <= 5                                            # arrêté par llm.total_budget_eur (10 EUR)
+    assert "déjà payé par les backtests précédents : 9.80 € sur 10.00 €" in out
     assert "plafond de dépense réelle de tous les backtests" in out
-    assert ReplyCache(cache).spent_lifetime <= 10.0
+    assert ReplyCache(cache).spent_lifetime <= 10.0 + 0.046                 # dépassement d'un appel au plus
 
     # Cumul presque épuisé : l'estimation ne tient plus dedans, on refuse de lancer.
     cache.write_text(json.dumps({**row, "cost_eur": 9.999}) + "\n", encoding="utf-8")

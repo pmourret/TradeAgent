@@ -14,6 +14,7 @@ import statistics
 from typing import Any
 
 from .models import TIMEFRAME_SECONDS, Candle
+from .signals import compute_models
 
 HORIZONS = {"1h": 3_600, "6h": 21_600, "24h": 86_400}
 LONG_HORIZONS = {"7d": 7 * 86_400, "30d": 30 * 86_400}
@@ -145,5 +146,8 @@ def summarize_candles(candles: list[Candle], timeframe: str) -> dict[str, Any]:
         summary["volatility_pct_per_candle"] = round(statistics.pstdev(returns) * 100, 3)
 
     summary.update(indicators(candles, timeframe))
+    models = compute_models(candles, timeframe)
+    if models:
+        summary["models"] = models          # les signaux des modèles mathématiques (signals.py), communs à tous les agents
     summary["closes"] = [_sig(c) for c in closes[-MAX_CLOSES:]]
     return summary

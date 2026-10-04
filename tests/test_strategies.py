@@ -117,5 +117,5 @@ def test_momentum_sort_avant_d_entrer_et_ignore_la_poussiere_et_les_donnees_abse
 
 
 def test_le_registre_des_strategies():
-    assert set(STRATEGIES) == {"buyhold", "dca", "momentum"}
+    assert set(STRATEGIES) == {"buyhold", "dca", "momentum", "quant"}
     assert all(cls().name == name for name, cls in STRATEGIES.items())

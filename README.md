@@ -61,6 +61,8 @@ tradeagent resume --profile llm       # relance un bot "halted" après avoir reg
 tradeagent reset --profile llm --yes  # nouvelle vie : repart de la mise de départ (le journal est gardé)
 ```
 
+`tradeagent run --stop-on-stdin` sert aux programmes qui lancent le bot (l'application de bureau) : le bot s'arrête proprement, à la fin de son cycle, quand son entrée standard reçoit `stop` ou se ferme. C'est l'équivalent de `Ctrl+C` là où il n'y a pas de terminal, notamment sous Windows. Rien d'autre n'est lu sur l'entrée standard.
+
 Sans `--profile`, les commandes utilisent la base de `config.yaml` (`data/agent.db`), comme avant. `--agent` et `--feed` restent prioritaires sur le profil.
 
 Agents : `hold` (ne fait rien, **la référence à battre**), `chaos` (aléatoire, demande aussi des choses absurdes, pour tester la plomberie), `llm-fake` (sorties simulées, coût simulé, pour tester le circuit LLM hors ligne) et `llm` (Anthropic).
@@ -103,9 +105,19 @@ npm start            # une fenêtre, un onglet par profil (Ctrl+1, Ctrl+2, Ctrl+
 npm test             # tests Node, hors réseau
 ```
 
-La même interface, dans une fenêtre au lieu du navigateur. L'application lance `tradeagent web --profile X` pour chaque profil avec le Python du `.venv` (lance `scripts/setup` d'abord) et affiche chaque page dans un onglet. Si une interface tourne déjà (`scripts/start`), elle est réutilisée. Fermer la fenêtre arrête ces interfaces.
+La même interface, dans une fenêtre au lieu du navigateur. L'application lance `tradeagent web --profile X` pour chaque profil avec le Python du `.venv` (lance `scripts/setup` d'abord) et affiche chaque page dans un onglet. Si une interface tourne déjà (`scripts/start`), elle est réutilisée.
 
-**Pour l'instant c'est une visionneuse** : elle ne démarre ni n'arrête aucun bot (lance-les comme avant, avec `scripts/start` ou `tradeagent run`). Le démarrage et l'arrêt depuis le menu, la zone de notification, les notifications de bureau et la version portable sont prévus, pas faits.
+Elle sert aussi à **démarrer et arrêter les bots** :
+
+- menu **Bots** (ou clic droit sur l'icône de la zone de notification) : *Démarrer* / *Arrêter* pour chaque profil, *Tout arrêter*. Le profil `llm` demande une confirmation, car son API est facturée. La pastille de l'onglet se remplit quand le bot tourne ;
+- **fermer la fenêtre n'arrête rien** : l'application se range dans la zone de notification et les bots continuent. **Quitter** (menu Fichier ou icône) arrête les bots proprement, après confirmation : chacun finit son cycle en cours, affiche son état, garde ses positions ;
+- si l'application plante ou est tuée, les bots qu'elle a démarrés s'arrêtent d'eux-mêmes à la fin de leur cycle : aucun bot ne tourne sans surveillance ;
+- un bot qui s'arrête sans qu'on l'ait demandé (clé API absente, base déjà utilisée par un autre bot, mort, plantage) est signalé avec ses dernières lignes ;
+- la sortie de chaque bot est écrite dans `data/logs/<profil>.log` (1 Mo, 3 fichiers d'historique) ; *Bots → Ouvrir le dossier des journaux*.
+
+Ce que l'application ne fait pas, volontairement : reprendre un bot `halted` (`tradeagent resume`) ou repartir d'une nouvelle vie (`tradeagent reset`) restent en ligne de commande, et aucune page ne peut agir sur un bot (les actions sont dans les menus natifs, pas dans l'interface web). Elle ne voit pas non plus un bot lancé ailleurs (`scripts/start`, un terminal) : sa pastille reste vide, et vouloir le démarrer une seconde fois est refusé par le verrou de la base.
+
+Pas encore faits : notifications de bureau sur les changements d'état (mort, palier), version portable.
 
 Les protections de l'interface web restent en place, et la fenêtre en ajoute : chaque page tourne en bac à sable, sans accès à Node ni au processus principal ; elle ne peut ni naviguer ni charger quoi que ce soit hors de son serveur local, ni ouvrir de fenêtre, ni obtenir de permission ; un port n'est affiché que si c'est bien tradeagent qui y répond.
 

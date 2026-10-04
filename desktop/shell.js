@@ -7,6 +7,7 @@
   const tabs = document.getElementById("tabs");
   const message = document.getElementById("message");
   const LABELS = { starting: "démarrage", ready: "prête", error: "erreur" };
+  const BOTS = { running: "bot en marche", stopping: "arrêt du bot en cours", stopped: "bot arrêté" };
 
   function render(state) {
     while (tabs.firstChild) tabs.removeChild(tabs.firstChild);
@@ -16,13 +17,22 @@
       tab.type = "button";
       tab.setAttribute("role", "tab");
       tab.setAttribute("aria-selected", String(p.name === state.active));
-      tab.title = p.description + " (interface " + (LABELS[p.status] || p.status) + ")";
+      // La pastille dit si le bot tourne (démarré par cette application) ; rouge = interface indisponible.
+      const bot = BOTS[p.bot] || p.bot;
+      tab.title = p.description + "\n" + bot + " · interface " + (LABELS[p.status] || p.status)
+        + "\nDémarrer ou arrêter : menu Bots.";
       const dot = document.createElement("span");
-      dot.className = "dot " + p.status;
+      dot.className = "dot " + (p.status === "error" ? "error" : "bot-" + p.bot);
       const label = document.createElement("span");
       label.textContent = p.name;
       tab.appendChild(dot);
       tab.appendChild(label);
+      if (p.bot !== "stopped") {
+        const badge = document.createElement("span");
+        badge.className = "badge";
+        badge.textContent = p.bot === "running" ? "en marche" : "arrêt…";
+        tab.appendChild(badge);
+      }
       tab.addEventListener("click", () => window.desktop.select(p.name));
       tabs.appendChild(tab);
     }

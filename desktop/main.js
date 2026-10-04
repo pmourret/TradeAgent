@@ -1,10 +1,15 @@
 "use strict";
 /*
- * Application de bureau tradeagent — phase F1 : visionneuse.
+ * Application de bureau tradeagent : visionneuse (F1) et superviseur (F2).
  *
- * Une coquille mince : pour chaque profil, on lance `python -m tradeagent web --profile X` (l'interface web
- * locale en lecture seule, inchangée) et on l'affiche dans un onglet. Cette phase ne démarre ni n'arrête
- * aucun bot.
+ * Visionneuse : pour chaque profil, on lance `python -m tradeagent web --profile X` (l'interface web locale
+ * en lecture seule, inchangée) et on l'affiche dans un onglet.
+ *
+ * Superviseur : démarrer et arrêter les bots, depuis le menu natif et la zone de notification UNIQUEMENT.
+ * Aucune page (ni la barre d'onglets, ni la page d'un profil) ne peut agir sur un bot : il n'existe aucun
+ * message IPC pour ça. Reprendre (`resume`) et réinitialiser (`reset`) restent en ligne de commande.
+ * Fermer la fenêtre la range dans la zone de notification, les bots continuent ; « Quitter » les arrête
+ * proprement (voir lib/supervisor.js).
  *
  * Sécurité (le bot manipule de l'argent, même fictif) :
  *  - la page d'un profil tourne en bac à sable, sans Node, sans preload : elle n'a aucun moyen de parler
@@ -13,18 +18,26 @@
  *    ni obtenir de permission (caméra, notifications...) ;
  *  - on n'affiche un port que si c'est bien notre serveur qui y répond.
  */
-const { app, BrowserWindow, WebContentsView, Menu, dialog, ipcMain, session } = require("electron");
+const { app, BrowserWindow, WebContentsView, Menu, Notification, Tray, dialog, ipcMain, nativeImage, session, shell } = require("electron");
 const { spawn } = require("node:child_process");
 const fs = require("node:fs");
 const path = require("node:path");
 const backend = require("./lib/backend");
+const { Supervisor } = require("./lib/supervisor");
 
 const TAB_BAR_HEIGHT = 40;          // même valeur que .tabs dans shell.css
 const PARTITION = "tradeagent";     // session à part, en mémoire : rien n'est écrit sur disque par les pages
 const ROOT = path.resolve(process.env.TRADEAGENT_ROOT || path.join(__dirname, ".."));
 const SMOKE_DIR = process.env.TRADEAGENT_DESKTOP_SMOKE || "";   // vérification automatique : capture puis quitte
+const SMOKE_BOT = process.env.TRADEAGENT_DESKTOP_SMOKE_BOT || "";   // ... en démarrant puis arrêtant ce bot
+const LOG_DIR = path.join(ROOT, "data", "logs");
+const BOT_LABELS = { running: "en marche", stopping: "arrêt en cours…", stopped: "arrêté" };
 
 let win = null;
+let tray = null;
+let supervisor = null;
+let quitting = false;        // « Quitter » a été confirmé : la fenêtre peut vraiment se fermer
+let trayHintShown = false;
 let shellReady = false;
 const state = { profiles: [], active: null, error_title: "", error: "" };
 
@@ -35,8 +48,14 @@ function publish() {
     active: state.active,
     error_title: state.error_title,
     error: state.error,
-    profiles: state.profiles.map((p) => ({ name: p.name, description: p.description, status: p.status, error: p.error })),
+    profiles: state.profiles.map((p) => ({
+      name: p.name, description: p.description, status: p.status, error: p.error, bot: botStatus(p.name),
+    })),
   });
+}
+
+function botStatus(name) {
+  return supervisor ? supervisor.state(name).status : "stopped";
 }
 
 function fatal(title, text) {
@@ -176,7 +195,9 @@ async function boot() {
   const wanted = (process.argv.find((a) => a.startsWith("--profile=")) || "").slice("--profile=".length);
   state.active = state.profiles.some((p) => p.name === wanted) ? wanted : state.profiles[0].name;
   hardenSession();
-  buildMenu();
+  supervisor = new Supervisor({ python, root: ROOT, logDir: LOG_DIR });
+  supervisor.on("change", onBotChange);
+  refreshMenus();
   publish();
   await Promise.all(state.profiles.map((p) => startWeb(p, python).then(() => {
     if (state.active === p.name) showActive();
@@ -185,11 +206,101 @@ async function boot() {
   if (SMOKE_DIR) smoke();
 }
 
+// ---------------------------------------------------------------- bots (menu natif et zone de notification)
+async function startBot(name) {
+  const profile = state.profiles.find((p) => p.name === name);
+  if (!profile || !supervisor || botStatus(name) !== "stopped") return;
+  if (profile.costs_money && !SMOKE_DIR) {
+    const { response } = await dialog.showMessageBox(visibleWindow(), {
+      type: "warning", title: "tradeagent", buttons: ["Démarrer", "Annuler"], defaultId: 1, cancelId: 1,
+      message: `Démarrer le bot « ${name} » ?`,
+      detail: "L'argent des ordres est fictif, mais ce profil appelle l'API du LLM, qui est facturée pour de vrai.\n"
+        + "La dépense est plafonnée par le code (budgets par jour et au total dans config.yaml).",
+    });
+    if (response !== 0) return;
+  }
+  supervisor.start(name);
+}
+
+function stopBot(name) {
+  if (supervisor) supervisor.stop(name);
+}
+
+function onBotChange(name, bot) {
+  refreshMenus();
+  publish();
+  if (bot.status !== "stopped" || bot.expected || quitting) return;
+  // Arrêt que personne n'a demandé : refus au démarrage (clé absente, base déjà utilisée), mort, halted, plantage.
+  const title = `Le bot « ${name} » s'est arrêté`;
+  const detail = bot.tail.slice(-8).join("\n") || `code de sortie ${bot.code}`;
+  if (win && win.isVisible() && win.isFocused()) {
+    dialog.showMessageBox(win, { type: "warning", title: "tradeagent", message: title, detail });
+  } else if (Notification.isSupported()) {
+    const note = new Notification({ title, body: bot.tail[bot.tail.length - 1] || `code de sortie ${bot.code}` });
+    note.on("click", () => { showWindow(); select(name); });
+    note.show();
+  }
+}
+
+function botItems() {
+  const items = [];
+  for (const p of state.profiles) {
+    const status = botStatus(p.name);
+    items.push({ label: `${p.name} : ${BOT_LABELS[status]}`, enabled: false });
+    items.push({ label: `    Démarrer ${p.name}`, enabled: status === "stopped", click: () => startBot(p.name) });
+    items.push({ label: `    Arrêter ${p.name}`, enabled: status === "running", click: () => stopBot(p.name) });
+  }
+  const running = supervisor ? supervisor.running().length : 0;
+  items.push({ type: "separator" });
+  items.push({ label: "Tout arrêter", enabled: running > 0, click: () => supervisor.stopAll() });
+  items.push({ label: "Ouvrir le dossier des journaux", click: () => { fs.mkdirSync(LOG_DIR, { recursive: true }); shell.openPath(LOG_DIR); } });
+  return items;
+}
+
+function visibleWindow() {
+  return win && !win.isDestroyed() && win.isVisible() ? win : undefined;
+}
+
+function showWindow() {
+  if (!win || win.isDestroyed()) return;
+  if (win.isMinimized()) win.restore();
+  win.show();
+  win.focus();
+}
+
+function refreshMenus() {
+  buildMenu();
+  if (!tray) return;
+  const running = supervisor ? supervisor.running().length : 0;
+  tray.setToolTip(running ? `tradeagent — ${running} bot${running > 1 ? "s" : ""} en marche` : "tradeagent — aucun bot en marche");
+  tray.setContextMenu(Menu.buildFromTemplate([
+    { label: "Afficher la fenêtre", click: showWindow },
+    { type: "separator" },
+    ...botItems(),
+    { type: "separator" },
+    { label: "Quitter", click: () => app.quit() },
+  ]));
+}
+
+function createTray() {
+  tray = new Tray(nativeImage.createFromPath(path.join(__dirname, "icon.png")).resize({ width: 16, height: 16 }));
+  tray.on("click", showWindow);
+  refreshMenus();
+}
+
 // ---------------------------------------------------------------- menu
 function buildMenu() {
   const activeView = () => (state.profiles.find((p) => p.name === state.active) || {}).view;
   Menu.setApplicationMenu(Menu.buildFromTemplate([
-    { label: "Fichier", submenu: [{ label: "Quitter", role: "quit" }] },
+    {
+      label: "Fichier",
+      submenu: [
+        { label: "Réduire dans la zone de notification", accelerator: "CmdOrCtrl+W", click: () => win && win.close() },
+        { type: "separator" },
+        { label: "Quitter (arrête les bots)", accelerator: "CmdOrCtrl+Q", click: () => app.quit() },
+      ],
+    },
+    { label: "Bots", submenu: botItems() },
     {
       label: "Profils",
       submenu: state.profiles.map((p, i) => ({
@@ -216,6 +327,7 @@ function buildMenu() {
           type: "info", title: "tradeagent",
           message: "tradeagent — paper trading, argent fictif",
           detail: "Cette fenêtre affiche l'interface locale en lecture seule de chaque profil.\n"
+            + "Le menu Bots démarre et arrête les bots ; fermer la fenêtre ne les arrête pas, Quitter si.\n"
             + "Reprendre un bot arrêté ou repartir d'une nouvelle vie reste en ligne de commande :\n"
             + "tradeagent resume · tradeagent reset",
         }),
@@ -231,15 +343,25 @@ function zoom(view, delta) {
 
 // ---------------------------------------------------------------- vérification automatique
 async function smoke() {
-  await new Promise((r) => setTimeout(r, 2500));
+  if (SMOKE_BOT) await startBot(SMOKE_BOT);
+  await new Promise((r) => setTimeout(r, SMOKE_BOT ? 7000 : 2500));
   fs.mkdirSync(SMOKE_DIR, { recursive: true });
+  const during = SMOKE_BOT ? supervisor.state(SMOKE_BOT) : null;
+  if (win.isVisible()) win.close();            // doit ranger la fenêtre, pas quitter ni arrêter le bot
+  await new Promise((r) => setTimeout(r, 500));
+  const hidden = { window_visible: win.isVisible(), bot_while_hidden: SMOKE_BOT ? supervisor.state(SMOKE_BOT).status : null };
+  win.show();
+  await new Promise((r) => setTimeout(r, 500));
   fs.writeFileSync(path.join(SMOKE_DIR, "shell.png"), (await win.webContents.capturePage()).toPNG());
   const active = state.profiles.find((p) => p.name === state.active);
   if (active && active.view) {
     fs.writeFileSync(path.join(SMOKE_DIR, "view.png"), (await active.view.webContents.capturePage()).toPNG());
   }
-  fs.writeFileSync(path.join(SMOKE_DIR, "state.json"), JSON.stringify(
-    state.profiles.map((p) => ({ name: p.name, port: p.port, status: p.status, error: p.error })), null, 2));
+  if (SMOKE_BOT) await supervisor.stopAll();
+  fs.writeFileSync(path.join(SMOKE_DIR, "state.json"), JSON.stringify({
+    profiles: state.profiles.map((p) => ({ name: p.name, port: p.port, status: p.status, error: p.error })),
+    hidden, bot_during: during, bot_after: SMOKE_BOT ? supervisor.state(SMOKE_BOT) : null,
+  }, null, 2));
   app.quit();
 }
 
@@ -247,11 +369,7 @@ async function smoke() {
 if (!app.requestSingleInstanceLock()) {
   app.quit();
 } else {
-  app.on("second-instance", () => {
-    if (!win) return;
-    if (win.isMinimized()) win.restore();
-    win.focus();
-  });
+  app.on("second-instance", showWindow);
 
   ipcMain.on("select-tab", (event, name) => {
     if (win && event.sender === win.webContents) select(String(name));
@@ -273,14 +391,53 @@ if (!app.requestSingleInstanceLock()) {
     win.webContents.on("will-navigate", (event) => event.preventDefault());
     win.on("page-title-updated", (event) => event.preventDefault());
     win.on("resize", layout);
+    win.on("close", (event) => {
+      if (quitting) return;
+      event.preventDefault();          // fermer = ranger : les bots et la surveillance continuent
+      win.hide();
+      if (!trayHintShown && !SMOKE_DIR && Notification.isSupported()) {
+        trayHintShown = true;
+        new Notification({
+          title: "tradeagent continue en arrière-plan",
+          body: "Les bots ne sont pas arrêtés. Icône dans la zone de notification : clic pour rouvrir, clic droit puis Quitter pour tout arrêter.",
+        }).show();
+      }
+    });
     win.on("closed", () => { win = null; });
     win.loadFile(path.join(__dirname, "shell.html"));
+    createTray();
     boot();
   });
 
-  app.on("before-quit", () => {
-    app.isQuitting = true;
-    stopChildren();
+  // Quitter : confirmation s'il reste des bots, arrêt propre de chacun, puis seulement la sortie.
+  app.on("before-quit", (event) => {
+    if (quitting) return;
+    const running = supervisor ? supervisor.running() : [];
+    if (!running.length) {
+      finishQuit();
+      return;
+    }
+    event.preventDefault();
+    const ask = SMOKE_DIR ? Promise.resolve({ response: 0 }) : dialog.showMessageBox(visibleWindow(), {
+      type: "question", title: "tradeagent", buttons: ["Arrêter les bots et quitter", "Annuler"], defaultId: 1, cancelId: 1,
+      message: `Quitter arrête ${running.length > 1 ? "les bots" : "le bot"} : ${running.join(", ")}`,
+      detail: "Chaque bot finit son cycle en cours, puis s'arrête. Les positions éventuelles sont conservées.\n"
+        + "Pour les laisser tourner, ferme simplement la fenêtre.",
+    });
+    ask.then(async ({ response }) => {
+      if (response !== 0) return;
+      await supervisor.stopAll();
+      finishQuit();
+      app.quit();
+    });
   });
-  app.on("window-all-closed", () => app.quit());
+  app.on("window-all-closed", () => {});   // la fenêtre est rangée, jamais fermée, tant qu'on n'a pas quitté
+  process.on("exit", () => { if (supervisor) supervisor.killAll(); });
+}
+
+function finishQuit() {
+  quitting = true;
+  app.isQuitting = true;
+  stopChildren();
+  if (tray) tray.destroy();
 }

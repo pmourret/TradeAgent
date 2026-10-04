@@ -2,3 +2,4 @@
 # un .sh en CRLF ne s'exécute pas, un .bat en LF se comporte mal.
 *.sh  text eol=lf
 *.bat text eol=crlf
+*.png binary

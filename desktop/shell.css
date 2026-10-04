@@ -1,14 +1,14 @@
 /* Barre d'onglets : mêmes teintes que l'interface web (src/tradeagent/static/app.css). */
 :root {
   --bg: #0d1117; --surface: #151b23; --line: #2a3441;
-  --text: #e8ecf1; --muted: #9ba7b5; --ok: #4cc9f0; --dead: #ff6b7a;
+  --text: #e8ecf1; --muted: #9ba7b5; --ok: #4cc9f0; --warn: #f4c15d; --dead: #ff6b7a;
   --font: "IBM Plex Sans", ui-sans-serif, system-ui, "Segoe UI", sans-serif;
   --mono: "IBM Plex Mono", ui-monospace, Consolas, monospace;
 }
 @media (prefers-color-scheme: light) {
   :root {
     --bg: #f3f5f8; --surface: #ffffff; --line: #d3d9e1;
-    --text: #11161c; --muted: #4b5866; --ok: #0b6e99; --dead: #b3261e;
+    --text: #11161c; --muted: #4b5866; --ok: #0b6e99; --warn: #8a5a00; --dead: #b3261e;
   }
 }
 * { box-sizing: border-box; }
@@ -22,9 +22,11 @@ body { margin: 0; background: var(--bg); color: var(--text); font-family: var(--
 .tab:hover { color: var(--text); }
 .tab:focus-visible { outline: 2px solid var(--ok); outline-offset: -2px; }
 .tab[aria-selected="true"] { color: var(--text); border-bottom-color: var(--ok); }
-.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
-.dot.ready { background: var(--ok); }
-.dot.error { background: var(--dead); }
+.dot { width: 8px; height: 8px; border-radius: 50%; border: 1.5px solid var(--muted); }
+.dot.bot-running { background: var(--ok); border-color: var(--ok); }
+.dot.bot-stopping { background: var(--warn); border-color: var(--warn); }
+.dot.error { background: var(--dead); border-color: var(--dead); }
+.badge { font-family: var(--font); font-size: 11px; padding: 1px 7px; border-radius: 999px; border: 1px solid var(--line); color: var(--text); }
 
 .message { max-width: 640px; margin: 64px auto; padding: 0 24px; user-select: text; }
 .message h1 { font-size: 18px; margin: 0 0 8px; }

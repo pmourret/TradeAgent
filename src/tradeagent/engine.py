@@ -228,9 +228,11 @@ class Engine:
 
     # -- boucle ----------------------------------------------------------
     def run_forever(self, max_cycles: int | None = None,
-                    sleep: Callable[[float], None] = time.sleep) -> int:
+                    sleep: Callable[[float], None] = time.sleep,
+                    should_stop: Callable[[], bool] = lambda: False) -> int:
+        """`should_stop` n'est consulté qu'entre deux cycles : un cycle commencé va toujours à son terme."""
         n = 0
-        while max_cycles is None or n < max_cycles:
+        while (max_cycles is None or n < max_cycles) and not should_stop():
             n += 1
             try:
                 result = self.run_cycle()
@@ -242,6 +244,6 @@ class Engine:
             if self._ks.active:
                 log.warning("agent arrêté (%s) : %s", self._ks.status, self._ks.reason)
                 break
-            if max_cycles is None or n < max_cycles:
+            if (max_cycles is None or n < max_cycles) and not should_stop():
                 sleep(self._cfg.cycle_seconds)
         return n

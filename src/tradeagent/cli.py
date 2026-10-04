@@ -18,6 +18,7 @@ from .launcher import build_jobs, describe, preflight, resolve_profiles, run_job
 from .llm import LLMError, require_api_key
 from .lock import InstanceLock
 from .profiles import LIVE, PROFILES, apply_profile, get_profile
+from .stopper import StdinStop
 from .storage import Storage
 from .web import DEFAULT_PORT, make_server
 
@@ -42,6 +43,9 @@ def _parser() -> argparse.ArgumentParser:
     run.add_argument("--max-cycles", type=int, default=None, help="s'arrête après N cycles")
     run.add_argument("--cycle-seconds", type=float, default=None, help="remplace cycle_seconds de la config")
     run.add_argument("--seed", type=int, default=None, help="graine pour agent chaos / llm-fake / flux synthetic")
+    run.add_argument("--stop-on-stdin", action="store_true",
+                     help="s'arrête proprement, en fin de cycle, quand l'entrée standard reçoit `stop` ou se ferme "
+                          "(pour un programme parent, comme l'application de bureau, qui ne peut pas envoyer Ctrl+C)")
 
     status = sub.add_parser("status", parents=[common], help="affiche l'état (lecture seule)")
     status.add_argument("--all", action="store_true", help="tous les profils qui ont déjà tourné, à la suite")
@@ -96,7 +100,13 @@ def cmd_run(args: argparse.Namespace) -> int:
         print(f"LLM {cfg.llm.model} : un appel max toutes les {cfg.llm.call_every_seconds / 60:g} min, "
               f"budget restant {budget.left()['today']:.2f} € aujourd'hui / {budget.left()['total']:.2f} € au total")
     try:
-        engine.run_forever(max_cycles=args.max_cycles, sleep=time.sleep)
+        if args.stop_on_stdin:
+            stop = StdinStop().start()
+            engine.run_forever(max_cycles=args.max_cycles, sleep=stop.wait, should_stop=stop.requested)
+            if stop.requested():
+                print(f"\n{stop.reason} : le bot s'arrête proprement (les positions éventuelles sont conservées)")
+        else:
+            engine.run_forever(max_cycles=args.max_cycles, sleep=time.sleep)
     except KeyboardInterrupt:
         print("\ninterrompu (les positions éventuelles sont conservées)")
     finally:

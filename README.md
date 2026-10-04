@@ -254,8 +254,10 @@ Le palier se recalcule à chaque cycle et redescend si l'equity remonte. Il comp
 
 | État (`killswitch.py`) | Déclencheur | Conséquence |
 |---|---|---|
-| `dead` | equity ≤ mise − `max_total_loss_pct`, ou drawdown ≥ `max_drawdown_pct` | Tout est vendu (`liquidate_on_death`), plus aucun appel à l'agent, **définitif** |
+| `dead` | equity nette du loyer ≤ mise − `max_total_loss_pct`, ou drawdown ≥ `max_drawdown_pct` | Tout est vendu (`liquidate_on_death`), plus aucun appel à l'agent, **définitif** |
 | `halted` | `max_consecutive_errors` erreurs d'affilée (agent, LLM, flux de prix, exchange) | Arrêt sans liquidation ; `tradeagent resume` après vérification |
+
+**Le loyer sort de la mise.** Le kill switch, le plus-haut et les paliers de risque ne jugent pas l'equity seule, mais l'**equity nette du loyer** : l'equity moins ce que l'inférence a coûté depuis le début de la vie. Un bot qui reste en cash et appelle le LLM toutes les heures ne perd rien en trading, mais son loyer le fait descendre de palier, puis le tue. C'est la règle du jeu : survivre, c'est gagner plus qu'on ne dépense en API. La perte du jour, la taille des ordres et l'equity montrée à l'agent restent calculées sur l'equity réelle ; l'interface affiche la courbe, le plus-haut et le drawdown nets du loyer. Pour `hold` et `demo`, qui n'appellent pas le LLM, rien ne change.
 
 L'état est écrit en base SQLite : relancer le script ne ressuscite pas un bot mort et ne remet pas le solde simulé à zéro. Changer `stake` sans `reset` est refusé. Une pause de l'agent (cadence, budget épuisé, pas de bougies) n'est ni une erreur ni une réussite : elle ne remet pas à zéro le compteur d'erreurs, donc un LLM durablement en panne finit bien par arrêter le bot.
 

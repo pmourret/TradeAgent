@@ -2,9 +2,27 @@
 
 Axes d'évolution, dans l'ordre conseillé. Mettre à jour quand une phase avance.
 
-**Ordre conseillé** : axe F (F1 → F4, priorité de Pierre ; F0 à F4 faits ; l'étape 0 se fait en parallèle, elle ne demande aucun code) → B1 → B2–B4 selon les résultats → D1/D2 → étape 1 (a → e) → réel à 50 €. Rien ne justifie de brancher l'argent réel avant d'avoir montré, en paper, que l'agent fait mieux que `hold` *net de l'API*. S'il n'y arrive pas, la valeur du projet est le cadre d'expérimentation lui-même.
+**Ordre conseillé** : axe A (priorité fixée par Pierre le 2026-10-04 : A1 → A3 → A2 → A4/A5, après un premier backtest réel pour mesurer le coût d'un appel), puis le reste de l'ordre précédent : axe F (F1 → F4, priorité de Pierre ; F0 à F4 faits ; l'étape 0 se fait en parallèle, elle ne demande aucun code) → B1 → B2–B4 selon les résultats → D1/D2 → étape 1 (a → e) → réel à 50 €. Rien ne justifie de brancher l'argent réel avant d'avoir montré, en paper, que l'agent fait mieux que `hold` *net de l'API*. S'il n'y arrive pas, la valeur du projet est le cadre d'expérimentation lui-même.
 
-### Axe F — Application de bureau Electron (priorité actuelle)
+### Axe A — Survie et lignée (objectif fixé par Pierre le 2026-10-04, priorité actuelle)
+But de l'application, dit par Pierre : pas « faire jouer un bot », mais **rapporter de l'argent à son utilisateur**. Le bot doit survivre, se cloner quand il le juge utile, et viser une croissance composée. Sa mort signifie qu'il ne gagne pas plus qu'il ne dépense en API. Rien n'indique aujourd'hui qu'il y arrive : chaque étape se juge par backtest, nette du loyer, contre `hold` et `buyhold`, et tout reste en paper.
+
+Inspiration : https://github.com/Conway-Research/automaton (étudié le 2026-10-04 : pas d'existence gratuite, paliers de survie selon le solde, réveils par battement de cœur, réplication avec lignée et sélection, mémoire `SOUL.md`, lois immuables). On en reprend le fonctionnement, **pas l'auto-modification du code** : l'agent ne modifie ni son code, ni ses garde-fous, ni sa config. Deux choses absentes du dépôt sont à concevoir ici : la variation entre parent et enfant, et le reversement des gains au créateur.
+
+- **A1. Le loyer sort de la mise** — *fait le 2026-10-04 (voir `etat.md`)* : le kill switch, le plus-haut et les paliers de risque jugent l'**equity nette du loyer** (equity moins les coûts d'API de la vie), plus l'equity seule. Un bot qui ne trade pas mais appelle le LLM finit par mourir. Question laissée ouverte : que faire quand le plafond `llm.total_budget_eur` est atteint (aujourd'hui l'agent se met en pause, vivant).
+- **A2. Palier « économie »** : quand l'equity nette baisse, le bot espace ses appels (et plus tard passe à un modèle moins cher), comme les paliers de survie d'automaton. À faire avec A3, les deux touchent la cadence.
+- **A3. Réflexion** : prompt corrigé et versionné (vrais frais : la config applique 0,25 %, le prompt annonce 0,1 % ; dire que le loyer sort de la mise et peut tuer) ; réveil choisi par l'agent (« rappelle-moi dans 6 h », « si BTC bouge de 3 % ») au lieu d'un appel par heure ; note de mémoire courte qu'il écrit pour lui-même (équivalent de `SOUL.md`). Recouvre B2, B3 et B5. Un ajout à la fois, chacun justifié par backtest, coût en tokens compris.
+- **A4. Lignée par variantes** (décisions de Pierre, 2026-10-04) :
+  - un « génome » par bot : version du prompt, température, politique de réveil ; tout le reste est commun et fixé par le code ;
+  - **l'agent propose, le code dispose** : il peut demander à se cloner ; le code n'accepte que si ses gains au-dessus de sa mise financent l'enfant, **jamais avec de l'argent neuf**, et sous un nombre maximal d'enfants ;
+  - **transmission** : comme chez l'humain, le parent transmet ce qu'il sait, par une note de stratégie bornée ajoutée à un prompt de base qu'il ne peut pas changer ; une **graine aléatoire** fait varier les paramètres (température, cadence) dans des bornes fixées par le code ;
+  - chaque enfant a sa vie, sa base, son kill switch et paie son loyer ; la sélection est la règle de mort, la même pour tous ;
+  - cloner multiplie le loyer : pas de clonage tant qu'aucun bot ne couvre le sien.
+- **A5. La caisse** (décision de Pierre) : part des gains mise de côté pour l'utilisateur, hors de portée du bot. Configurable, **50/50 pour commencer** : 50 % restent au bot pour grossir et se cloner, 50 % vont en caisse. C'est une écriture comptable : aucune fonction de retrait ni de transfert dans le code (invariant 9).
+- **A6. Interface** : reste en lecture seule (décision de Pierre) ; vue de la lignée ; plus tard, réglage de la température de l'agent, ce qui demandera de revoir l'invariant 10.
+- Invariants concernés, à réécrire avec Pierre au moment de A4 : 1 (l'agent n'agit pas : une demande de clonage est une proposition), 8 (une vie = une mise : la mise de l'enfant vient des gains du parent).
+
+### Axe F — Application de bureau Electron (fait)
 Code dans `desktop/` (Node/Electron), sans toucher au moteur. Chaque phase est livrable seule.
 - **F0. Socle** — *fait le 2026-10-04* : `git init`, suite au vert sous Windows (PID du `.lock` lisible pendant que le bot tourne, `test_launcher.py` chargeable, chemins comparés en `Path`).
 - **F1. Visionneuse** — *faite le 2026-10-04, vérifiée par capture d'écran sous Windows (Electron 41) ; reste le nom du profil dans l'en-tête de la page web (axe E), aujourd'hui seulement dans l'onglet et le titre de la fenêtre* : le processus principal lance `python -m tradeagent web --profile X` pour chaque profil et affiche `http://127.0.0.1:<port>` dans une fenêtre à onglets (un par profil). Fenêtre verrouillée : `sandbox`, `contextIsolation`, pas de `nodeIntegration`, pas de preload sur la page du bot, navigation et nouvelles fenêtres hors boucle locale refusées. Une seule instance de l'app. Nom du profil dans l'en-tête et le titre (axe E). En développement, l'app utilise le `.venv` du projet.

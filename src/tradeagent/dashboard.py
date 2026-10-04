@@ -107,11 +107,13 @@ def _fill(snap: dict[str, Any], db: sqlite3.Connection, cfg: Config, now: float)
     # Le cash vient des soldes COURANTS (après une liquidation, le dernier point d'equity est antérieur à la vente).
     balances = _kv(db, "paper_balances", {}) or {}
     cash = float(balances.get(cfg.quote_currency, last[0]["cash"]))
-    peak = max(float(_kv(db, "peak_equity", stake)), equity)
-    drawdown = (1 - equity / peak) * 100 if peak > 0 else 0.0
-
     # -- coûts API ----------------------------------------------------------
     spent_life = _spend(db, started)
+    # Le kill switch et les paliers jugent l'equity nette du loyer (equity moins le coût d'API de cette vie) :
+    # le plus-haut, le drawdown et les lignes de palier sont donc exprimés dans cette même grandeur.
+    net_equity = equity - spent_life
+    peak = max(float(_kv(db, "peak_equity", stake)), net_equity)
+    drawdown = (1 - net_equity / peak) * 100 if peak > 0 else 0.0
     spent_total = _spend(db, 0.0)
     spent_today = _spend(db, day_start_ts(now))
     llm_last = _kv(db, "llm_last_call")
@@ -142,8 +144,7 @@ def _fill(snap: dict[str, Any], db: sqlite3.Connection, cfg: Config, now: float)
         }
 
     ks = _kv(db, "killswitch") or {"status": "alive", "reason": "", "ts": None}
-    series = [[r["ts"], r["equity"]] for r in db.execute(
-        "SELECT ts, equity FROM equity WHERE ts >= ? ORDER BY rowid", (started,))]
+    series = _net_series(db, started)
     fills = _rows(db, "SELECT * FROM fills ORDER BY id DESC LIMIT ?", (FILL_ROWS,))
     for f in fills:
         f["notional"] = f["quantity"] * f["price"]
@@ -156,7 +157,7 @@ def _fill(snap: dict[str, Any], db: sqlite3.Connection, cfg: Config, now: float)
         "risk_tier": _kv(db, "risk_tier", "normal"),
         "life": {"stake": stake, "started": started},
         "money": {
-            "equity": equity, "cash": cash, "stake": stake,
+            "equity": equity, "net_equity": net_equity, "cash": cash, "stake": stake,
             "change_pct": (equity / stake - 1) * 100 if stake else 0.0,
             "api_spent_life": spent_life,
             "net_result": equity - stake - spent_life,
@@ -194,6 +195,19 @@ def _fill(snap: dict[str, Any], db: sqlite3.Connection, cfg: Config, now: float)
         },
     })
     return snap
+
+
+def _net_series(db: sqlite3.Connection, started: float) -> list[list[float]]:
+    """Courbe de la vie en cours, nette du loyer : chaque point d'equity moins le coût d'API cumulé jusque-là."""
+    calls = db.execute("SELECT ts, cost_eur FROM llm_calls WHERE ts >= ? ORDER BY ts", (started,)).fetchall()
+    series, rent, i = [], 0.0, 0
+    for row in db.execute("SELECT ts, equity FROM equity WHERE ts >= ? ORDER BY rowid", (started,)):
+        # Strictement avant : un appel daté du cycle lui-même a été payé APRÈS la photo de ce cycle.
+        while i < len(calls) and calls[i]["ts"] < row["ts"]:
+            rent += calls[i]["cost_eur"]
+            i += 1
+        series.append([row["ts"], row["equity"] - rent])
+    return series
 
 
 def _spend(db: sqlite3.Connection, since: float) -> float:

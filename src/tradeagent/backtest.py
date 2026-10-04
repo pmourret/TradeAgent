@@ -122,7 +122,8 @@ def run_backtest(cfg: Config, agent_kind: str, history: dict[str, list[Candle]],
         return BacktestResult(
             agent=agent_kind, status=state["status"], cycles=cycles, final_equity=final_equity,
             api_cost=api_cost, net_result=net, return_pct=net / cfg.stake * 100,
-            max_drawdown_pct=max_drawdown_pct(storage.equity_series() + [final_equity]),
+            # Net du loyer, comme le kill switch : sinon un agent tué par son loyer afficherait un drawdown minuscule.
+            max_drawdown_pct=max_drawdown_pct(storage.net_equity_series() + [final_equity - api_cost]),
             orders=int(totals["orders"]), fees=totals["fees"], reason=str(state.get("reason", "")),
         )
     finally:

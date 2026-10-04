@@ -5,6 +5,9 @@ Trois états :
 - halted : arrêt opérationnel (trop d'erreurs d'affilée). Pas de liquidation : on ne touche
            à rien tant qu'un humain n'a pas regardé. `resume` le débloque.
 - dead   : la mise est perdue au-delà des seuils. Définitif : seul `reset` (nouvelle vie) repart.
+
+Les seuils financiers jugent l'equity NETTE DU LOYER (equity moins le coût d'API de la vie en cours), que le
+moteur calcule et passe à `check_financial` : pertes de trading et loyer d'inférence tuent de la même façon.
 """
 from __future__ import annotations
 
@@ -52,17 +55,17 @@ class KillSwitch:
 
     # -- seuils financiers -----------------------------------------------
     def check_financial(self, equity: float, peak_equity: float) -> str | None:
-        """Retourne la raison de la mort si un seuil est franchi, sinon None."""
+        """Retourne la raison de la mort si un seuil est franchi, sinon None. `equity` et `peak_equity` sont nets du loyer."""
         loss_floor = self._stake * (1 - self._cfg.max_total_loss_pct / 100)
         if equity <= loss_floor:
             return (
-                f"perte totale : equity {equity:.2f} <= {loss_floor:.2f} "
+                f"perte totale : equity nette du loyer {equity:.2f} <= {loss_floor:.2f} "
                 f"({self._cfg.max_total_loss_pct:g} % de la mise {self._stake:.2f} perdus)"
             )
         dd_floor = peak_equity * (1 - self._cfg.max_drawdown_pct / 100)
         if peak_equity > 0 and equity <= dd_floor:
             return (
-                f"drawdown max : equity {equity:.2f} <= {dd_floor:.2f} "
+                f"drawdown max : equity nette du loyer {equity:.2f} <= {dd_floor:.2f} "
                 f"(-{self._cfg.max_drawdown_pct:g} % depuis le plus haut {peak_equity:.2f})"
             )
         return None

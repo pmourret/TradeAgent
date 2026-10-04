@@ -34,8 +34,10 @@ guardrails:
 
 # Kill switch : indépendant de l'agent, état conservé en base (un redémarrage ne ressuscite pas le bot).
 killswitch:
-  max_total_loss_pct: 50       # equity <= 50 % de la mise : mort
-  max_drawdown_pct: 40         # -40 % depuis le plus haut : mort
+  # Les seuils ci-dessous et les paliers de risque jugent l'equity NETTE DU LOYER : equity moins le coût d'API
+  # de la vie en cours. Le loyer d'inférence sort de la mise, et tue comme une perte de trading.
+  max_total_loss_pct: 50       # equity nette <= 50 % de la mise : mort
+  max_drawdown_pct: 40         # -40 % depuis le plus haut (net du loyer lui aussi) : mort
   max_consecutive_errors: 10   # trop d'erreurs d'affilée : arrêt sans liquidation
   liquidate_on_death: true     # à la mort, tout est vendu au marché
 

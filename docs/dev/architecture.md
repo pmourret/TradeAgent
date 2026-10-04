@@ -6,7 +6,7 @@ Le cycle du moteur et le rôle de chaque module.
 prix + bougies → agent → garde-fous → exchange → journal      (kill switch qui surveille à chaque cycle)
 ```
 
-Un cycle (`engine.py::Engine.run_cycle`) : kill switch actif ? → photo du portefeuille (erreur = erreur de cycle) → jour UTC, plus-haut, equity enregistrée → seuils de mort (liquidation) → palier de risque (`normal` / `cautious` ≥ 15 % de drawdown / `defensive` ≥ 25 %) → `MarketView` → `agent.decide` (toute exception = ne rien faire + erreur comptée) → `skipped` / `hold` / garde-fous → `market_order` → journal. Détails et valeurs : `README.md` et `config.yaml` (commenté).
+Un cycle (`engine.py::Engine.run_cycle`) : kill switch actif ? → photo du portefeuille (erreur = erreur de cycle) → jour UTC, plus-haut, equity enregistrée → loyer de la vie (coût d'API depuis `life.started`) retiré de l'equity → seuils de mort sur cette equity nette (liquidation) → palier de risque, net lui aussi (`normal` / `cautious` ≥ 15 % de drawdown / `defensive` ≥ 25 %) → `MarketView` → `agent.decide` (toute exception = ne rien faire + erreur comptée) → `skipped` / `hold` / garde-fous → `market_order` → journal. Détails et valeurs : `README.md` et `config.yaml` (commenté).
 
 | Module (`src/tradeagent/`) | Rôle |
 |---|---|

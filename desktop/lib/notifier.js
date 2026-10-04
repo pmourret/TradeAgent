@@ -63,9 +63,9 @@ function digest(snap, prev, running) {
 }
 
 const TIER_TEXT = {
-  normal: ["retour au palier normal", "Le portefeuille est remonté : les limites d'achat habituelles s'appliquent de nouveau."],
-  cautious: ["palier prudent", "Le portefeuille a reculé depuis son plus haut (drawdown) : les limites d'achat sont réduites."],
-  defensive: ["palier défensif", "Le portefeuille a nettement reculé depuis son plus haut (drawdown) : les achats sont bloqués, les ventes restent possibles."],
+  normal: ["retour au palier normal", "L'equity nette du loyer est remontée : les limites d'achat habituelles s'appliquent de nouveau."],
+  cautious: ["palier prudent", "L'equity nette du loyer a reculé depuis son plus haut (pertes de trading ou coût d'API) : les limites d'achat sont réduites."],
+  defensive: ["palier défensif", "L'equity nette du loyer a nettement reculé depuis son plus haut (pertes de trading ou coût d'API) : les achats sont bloqués, les ventes restent possibles."],
 };
 
 // Liste des notifications à émettre en passant de `prev` à `next` (deux résumés) pour le profil `name`.

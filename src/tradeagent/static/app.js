@@ -88,7 +88,7 @@
     }
     if (s.risk_tier === "defensive") {
       return { tone: "orange", label: "Palier défensif", icon: "defensive", sub: "Achats bloqués, ventes seulement",
-        banner: ["Palier défensif : achats bloqués", "Drawdown de " + dd + " % depuis le plus haut. L'agent ne peut plus que vendre jusqu'à ce que l'equity remonte."] };
+        banner: ["Palier défensif : achats bloqués", "Drawdown de " + dd + " % depuis le plus haut. L'agent ne peut plus que vendre jusqu'à ce que l'equity nette du loyer remonte."] };
     }
     if (s.risk_tier === "cautious") {
       return { tone: "warn", label: "Palier prudent", icon: "cautious", sub: "Tailles d'ordre réduites",
@@ -164,7 +164,7 @@
     $("kNet").textContent = signed(m.net_result, Math.abs(m.net_result) > 0 && Math.abs(m.net_result) < 0.01 ? 4 : 2) + NBSP + sym();
     $("kNetSub").textContent = "après " + money(a.spent_life, a.spent_life > 0 && a.spent_life < 0.01 ? 4 : 2) + " d'API (" + a.calls_life + " appels)";
     $("kDd").textContent = num(m.drawdown_pct, 1) + " %";
-    $("kDdSub").textContent = "depuis le plus haut : " + money(m.peak_equity);
+    $("kDdSub").textContent = "net du loyer, depuis le plus haut : " + money(m.peak_equity);
     $("kApi").textContent = money(a.spent_today, 3);
     $("kApiSub").textContent = "plafond du jour : " + money(a.daily_budget);
   }
@@ -238,7 +238,7 @@
 
     $("chartMeta").textContent = dur(span) + " · " + pts.length + " points";
     $("chart").setAttribute("aria-label",
-      "Courbe d'equity de " + money(vals[0]) + " à " + money(vals[vals.length - 1]) + ". Paliers : prudent sous " +
+      "Courbe d'equity nette du loyer de " + money(vals[0]) + " à " + money(vals[vals.length - 1]) + ". Paliers : prudent sous " +
       money(lines.cautious, 1) + ", défensif sous " + money(lines.defensive, 1) + ", mort sous " + money(lines.death, 1) + ".");
   }
 
@@ -272,8 +272,8 @@
       label.appendChild(el("span", null, num(item[0], 0) + " %"));
       marks.appendChild(label);
     });
-    $("gaugeText").textContent = "Drawdown actuel : " + num(dd, 1) + " % depuis le plus haut (" + money(s.money.peak_equity) +
-      "). Mort sous " + money(s.money.tier_lines.death) + ".";
+    $("gaugeText").textContent = "Drawdown actuel, net du loyer : " + num(dd, 1) + " % depuis le plus haut (" + money(s.money.peak_equity) +
+      "). Mort sous " + money(s.money.tier_lines.death) + " d'equity nette.";
   }
 
   function kvRow(label, value) {

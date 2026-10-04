@@ -162,6 +162,12 @@ def _print_status(cfg) -> int:
         net = last["equity"] - life["stake"] - spent_life
         digits = 4 if 0 < abs(net) < 0.01 else 2   # évite l'affichage trompeur « -0.00 »
         print(f"résultat net : {net:+.{digits}f} {ccy} (equity - mise - coûts API de cette vie)")
+        if spent_life:
+            peak = storage.get("peak_equity", life["stake"])
+            floor = max(life["stake"] * (1 - cfg.killswitch.max_total_loss_pct / 100),     # les deux seuils de mort
+                        peak * (1 - cfg.killswitch.max_drawdown_pct / 100))
+            print(f"equity nette du loyer : {last['equity'] - spent_life:.2f} {ccy} (loyer {spent_life:.4f} ; "
+                  f"mort sous {floor:.2f})")
     balances = storage.get("paper_balances") or {}
     held = {k: v for k, v in balances.items() if v}
     print("soldes :", ", ".join(f"{k} {v:.6g}" for k, v in held.items()) or "—")

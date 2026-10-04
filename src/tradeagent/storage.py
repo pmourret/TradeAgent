@@ -148,6 +148,18 @@ class Storage:
         """Toutes les valeurs d'equity enregistrées, dans l'ordre (pour le drawdown d'un backtest)."""
         return [float(r[0]) for r in self._db.execute("SELECT equity FROM equity ORDER BY rowid")]
 
+    def net_equity_series(self, since: float = 0.0) -> list[float]:
+        """Les valeurs d'equity nettes du loyer : chaque point moins le coût d'API cumulé jusque-là (depuis `since`)."""
+        calls = self._db.execute("SELECT ts, cost_eur FROM llm_calls WHERE ts >= ? ORDER BY ts", (since,)).fetchall()
+        series, rent, i = [], 0.0, 0
+        for row in self._db.execute("SELECT ts, equity FROM equity WHERE ts >= ? ORDER BY rowid", (since,)):
+            # Strictement avant : un appel daté du cycle lui-même a été payé APRÈS la photo de ce cycle.
+            while i < len(calls) and calls[i]["ts"] < row["ts"]:
+                rent += calls[i]["cost_eur"]
+                i += 1
+            series.append(float(row["equity"]) - rent)
+        return series
+
     def fills_totals(self) -> dict[str, float]:
         row = self._db.execute("SELECT COUNT(*) AS orders, COALESCE(SUM(fee), 0) AS fees FROM fills").fetchone()
         return {"orders": int(row["orders"]), "fees": float(row["fees"])}

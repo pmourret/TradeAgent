@@ -176,17 +176,19 @@ def test_la_serie_nette_cumule_le_loyer_paye_avant_chaque_point():
     assert storage.equity_series() == [100.0] * 4
 
 
-def test_en_backtest_un_agent_trop_cher_meurt_de_son_loyer():
+def test_en_backtest_un_agent_trop_cher_cesse_de_payer_quand_il_ne_peut_plus_agir():
     cfg = default_cfg(stake=50.0, llm={"price_input_per_mtok_usd": 20_000.0, "price_output_per_mtok_usd": 20_000.0,
                                        "daily_budget_eur": 1_000.0, "total_budget_eur": 1_000.0})
     start = 1_760_000_400.0
     history = synthetic_history(cfg.symbols, "1h", start - warmup_seconds(cfg), start + 2 * 86_400, seed=1, volatility=0.0001)
     result = run_backtest(cfg, "llm-fake", history, start, start + 2 * 86_400, seed=1)
-    assert result.status == "dead" and "equity nette du loyer" in result.reason
-    assert result.api_cost > 20.0                                               # c'est le loyer qui a tué...
-    assert result.final_equity > 45.0                                           # ... pas le trading
+    # Le loyer l'a mené au palier défensif (25 % sous le plus-haut net) : en cash, achats bloqués, il ne peut plus
+    # rien faire. Il n'est donc plus appelé : il ne paie plus, et n'atteint pas le seuil de mort (40 %).
+    assert result.status == "alive" and result.orders == 0
+    assert result.final_equity == 50.0                                          # rien perdu en trading
+    assert 12.5 <= result.api_cost < 20.0                                       # entre 25 % et 40 % de la mise
     assert result.net_result == pytest.approx(result.final_equity - 50.0 - result.api_cost)
-    assert result.max_drawdown_pct == pytest.approx((1 - (50.0 - result.api_cost) / 50.0) * 100)   # net, lui aussi
+    assert result.max_drawdown_pct == pytest.approx(result.api_cost / 50.0 * 100)   # le drawdown affiché est net
 
 
 def test_status_annonce_le_vrai_seuil_de_mort(tmp_path, monkeypatch, capsys):

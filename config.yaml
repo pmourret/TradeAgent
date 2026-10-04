@@ -58,6 +58,10 @@ llm:
   model: claude-haiku-4-5-20251001
   max_output_tokens: 400
   call_every_seconds: 3600         # au plus un appel par heure ; le kill switch, lui, tourne à chaque cycle
+  max_call_interval_seconds: 86400 # l'agent peut demander à dormir plus longtemps (il gère son loyer), jamais plus que ça
+  economy_call_factor: 2           # palier « économie » : intervalle minimal x2 en palier prudent, x4 en défensif
+  position_wake_move_pct: 3        # s'il dort en détenant une position, il est réveillé dès qu'un prix bouge d'autant
+                                   # (obligatoire : il peut demander un seuil plus serré, jamais plus large)
   price_input_per_mtok_usd: 1.0    # à vérifier sur la page de prix d'Anthropic
   price_output_per_mtok_usd: 5.0
   usd_to_eur: 0.90                 # approximatif et volontairement pessimiste ; à ajuster

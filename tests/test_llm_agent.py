@@ -206,3 +206,404 @@ def test_missing_candles_pause_the_llm_without_stopping_the_engine():
     result = engine.run_cycle()
     assert result.status == "skip" and "marché" in result.note and not client.calls
     assert any("bougies" in e["message"] for e in storage.recent_events(5))
+
+
+# -- prompt versionné, loyer visible, réveil choisi par l'agent, palier « économie » ---------------------------
+
+def test_le_prompt_donne_les_vrais_frais_le_loyer_et_les_bornes_de_reveil():
+    from tradeagent.llm_agent import PROMPT_VERSION, PROMPT_VERSION_KEY
+
+    agent, client, clock, storage, _ = make([reply(HOLD)])
+    storage.set("life", {"stake": 50.0, "started": START - 100})
+    storage.record_llm_call(START - 90_000, "m", 0, 0, 0, 0, 0.9)                 # vie précédente : hors loyer
+    storage.record_llm_call(START - 50, "m", 0, 0, 0, 0, 0.13)
+    agent.decide(view())
+    system, user, _ = client.calls[0]
+    data = json.loads(user.split("\n", 1)[1])
+    assert data["costs"] == {"fee_pct": 0.1, "slippage_pct": 0.05}              # ceux de la config, pas un texte figé
+    assert data["api_cost_so_far"] == 0.13 and data["net_equity"] == 49.87 and data["equity"] == 50.0
+    assert data["call_interval_minutes"] == {"min": 60, "max": 1440, "wake_move_pct_while_holding": 3.0}
+    assert "0.1%" not in system and '"costs"' in system and "net_equity" in system
+    assert "next_check_minutes" in system and "wake_if_move_pct" in system
+    assert storage.get(PROMPT_VERSION_KEY) == PROMPT_VERSION == 3
+
+
+def test_les_cles_de_reveil_sont_lues_avec_prudence():
+    from tradeagent.llm_agent import parse_wake
+
+    assert parse_wake('{"action": "hold", "next_check_minutes": 360, "wake_if_move_pct": 3}') == (360.0, 3.0)
+    assert parse_wake('```json\n{"action": "hold", "next_check_minutes": 90.5}\n```') == (90.5, None)
+    for bad in ('{"next_check_minutes": "360"}', '{"next_check_minutes": -5, "wake_if_move_pct": 0}',
+                '{"next_check_minutes": true}', '{"next_check_minutes": NaN}', '[360]', "pas du json", '{"action": "hold"}',
+                '{"next_check_minutes": 1' + "0" * 400 + '}', '{"wake_if_move_pct": 1e999}'):
+        assert parse_wake(bad) == (None, None), bad
+
+
+def sleepy(minutes=None, move=None):
+    extra = {}
+    if minutes is not None:
+        extra["next_check_minutes"] = minutes
+    if move is not None:
+        extra["wake_if_move_pct"] = move
+    return reply(json.dumps({"action": "hold", "reasoning": "calme", **extra}))
+
+
+def priced(now, btc=60_000.0, tier="normal", **over):
+    from dataclasses import replace
+
+    positions = {"BTC/EUR": {"quantity": 0.0, "price": btc, "value": 0.0},
+                 "ETH/EUR": {"quantity": 0.0, "price": 2_500.0, "value": 0.0}}
+    return replace(view(now), **{"positions": positions, "risk_tier": tier, **over})
+
+
+HELD = {"BTC/EUR": {"quantity": 0.001, "price": 60_000.0, "value": 60.0},
+        "ETH/EUR": {"quantity": 0.0, "price": 2_500.0, "value": 0.0}}
+DUST = {"BTC/EUR": {"quantity": 0.00001, "price": 60_000.0, "value": 0.6},
+        "ETH/EUR": {"quantity": 0.0, "price": 2_500.0, "value": 0.0}}
+LIMITS = {"max_order_quote": 10.0, "min_order_quote": 5.0, "buys_left_today": 10, "buys_blocked_below_equity": 47.5}
+
+
+def test_l_agent_peut_demander_a_dormir_et_n_est_pas_appele_avant():
+    agent, client, clock, *_ = make([sleepy(minutes=360), reply(HOLD), reply(HOLD)])
+    agent.decide(priced(clock()))
+    clock.advance(3_600)                                                        # la cadence de la config est passée
+    asleep = agent.decide(priced(clock()))
+    assert asleep.skipped and "sommeil choisi par l'agent : encore 300 min" in asleep.reasoning
+    clock.advance(5 * 3_600 - 1)
+    assert agent.decide(priced(clock())).skipped
+    clock.advance(1)
+    assert not agent.decide(priced(clock())).skipped and len(client.calls) == 2
+    clock.advance(3_600)                                                        # la seconde réponse ne demandait rien :
+    assert not agent.decide(priced(clock())).skipped and len(client.calls) == 3      # retour à la cadence par défaut
+
+
+def test_le_sommeil_demande_est_borne_par_le_code():
+    from tradeagent.llm_agent import WAKE_KEY
+
+    agent, _, clock, storage, _ = make([sleepy(minutes=1), sleepy(minutes=1_000_000)])
+    agent.decide(priced(clock()))
+    assert storage.get(WAKE_KEY)["at"] == clock() + 3_600                       # jamais plus tôt que la cadence
+    clock.advance(3_600)
+    agent.decide(priced(clock()))
+    assert storage.get(WAKE_KEY)["at"] == clock() + 86_400                      # jamais plus tard que le maximum
+
+
+def test_un_mouvement_de_prix_reveille_l_agent_mais_jamais_avant_la_cadence():
+    agent, client, clock, *_ = make([sleepy(minutes=600, move=3), reply(HOLD)])
+    agent.decide(priced(clock(), btc=60_000.0))
+    clock.advance(1_800)
+    assert agent.decide(priced(clock(), btc=70_000.0)).skipped                  # gros mouvement, mais cadence non écoulée
+    clock.advance(1_800)
+    assert agent.decide(priced(clock(), btc=61_799.0)).skipped                  # +2,998 % : pas assez
+    assert agent.decide(priced(clock(), btc=58_201.0)).skipped                  # -2,998 %
+    woken = agent.decide(priced(clock(), btc=58_200.0))                         # -3 % pile : réveil
+    assert not woken.skipped and len(client.calls) == 2
+
+
+def test_le_seuil_de_mouvement_est_borne():
+    from tradeagent.llm_agent import WAKE_KEY
+
+    agent, _, clock, storage, _ = make([sleepy(move=0.01), sleepy(move=900)])
+    agent.decide(priced(clock()))
+    wake = storage.get(WAKE_KEY)
+    assert wake["move_pct"] == 0.5 and wake["at"] == clock() + 3_600 and wake["prices"]["BTC/EUR"] == 60_000.0
+    clock.advance(3_600)
+    agent.decide(priced(clock()))
+    assert storage.get(WAKE_KEY)["move_pct"] == 50.0
+
+
+def test_un_changement_de_palier_reveille_l_agent():
+    agent, client, clock, *_ = make([sleepy(minutes=600), reply(HOLD)])
+    agent.decide(priced(clock()))
+    clock.advance(7_200)                                                        # cadence du palier prudent : 2 h
+    assert agent.decide(priced(clock())).skipped                                # même palier : il dort
+    assert not agent.decide(priced(clock(), tier="cautious")).skipped
+    assert len(client.calls) == 2
+
+
+def test_une_reponse_invalide_ne_regle_aucun_reveil():
+    from tradeagent.llm_agent import WAKE_KEY
+
+    agent, _, clock, storage, _ = make([reply('{"action": "danse", "next_check_minutes": 600}')])
+    with pytest.raises(InvalidDecision):
+        agent.decide(priced(clock()))
+    assert storage.get(WAKE_KEY) is None
+
+
+def test_palier_economie_l_intervalle_minimal_s_allonge_quand_l_equity_nette_recule():
+    agent, client, clock, *_ = make([reply(HOLD)] * 4)
+    assert (agent.min_interval("normal"), agent.min_interval("cautious"), agent.min_interval("defensive")) == (3_600, 7_200, 14_400)
+    agent.decide(priced(clock(), tier="cautious"))
+    clock.advance(7_199)
+    assert agent.decide(priced(clock(), tier="cautious")).skipped
+    clock.advance(1)
+    assert not agent.decide(priced(clock(), tier="cautious")).skipped
+    clock.advance(14_399)
+    assert agent.decide(priced(clock(), tier="defensive", positions=HELD)).skipped
+    clock.advance(1)
+    assert not agent.decide(priced(clock(), tier="defensive", positions=HELD)).skipped
+    assert len(client.calls) == 3
+
+    capped, *_ = make([], call_every_seconds=3_600, max_call_interval_seconds=10_000, economy_call_factor=5)
+    assert capped.min_interval("defensive") == 10_000                           # jamais au-delà du maximum
+    flat, *_ = make([], economy_call_factor=1)
+    assert flat.min_interval("defensive") == 3_600
+
+
+def test_aucun_appel_paye_quand_aucun_ordre_n_est_possible():
+    stuck = [
+        priced(START, tier="defensive"),                                        # achats bloqués, rien à vendre
+        priced(START, limits={**LIMITS, "buys_left_today": 0}),                 # plafond d'achats du jour atteint
+        priced(START, limits=LIMITS, equity=47.49, cash=47.49),                 # perte du jour atteinte
+        priced(START, limits=LIMITS, cash=4.99),                                # pas de quoi passer l'ordre minimum
+        priced(START, tier="defensive", positions=DUST),                        # poussière invendable
+    ]
+    for case in stuck:
+        agent, client, *_ = make([reply(HOLD)])
+        decision = agent.decide(case)
+        assert decision.skipped and "rien à faire" in decision.reasoning and client.calls == []
+    for case in (priced(START, tier="defensive", positions=HELD), priced(START, limits=LIMITS),
+                 priced(START, limits=LIMITS, equity=47.5, cash=47.5),       # pile le plancher : achat permis, comme les garde-fous
+                 priced(START, limits=LIMITS, cash=5.0),
+                 priced(START, limits={**LIMITS, "buys_left_today": 0}, positions=HELD)):
+        agent, client, *_ = make([reply(HOLD)])
+        assert not agent.decide(case).skipped and len(client.calls) == 1        # il peut vendre, ou acheter
+
+
+def test_les_nouvelles_cles_de_cadence_sont_validees():
+    from tradeagent.config import ConfigError
+
+    for bad in ({"max_call_interval_seconds": 1_800}, {"max_call_interval_seconds": 8 * 86_400},
+                {"economy_call_factor": 0.5}, {"economy_call_factor": 11}, {"economy_call_factor": "2"},
+                {"max_call_interval_seconds": float("nan")}):
+        with pytest.raises(ConfigError):
+            default_cfg(llm=bad)
+    cfg = default_cfg(llm={"max_call_interval_seconds": 3_600, "economy_call_factor": 1})
+    assert cfg.llm.max_call_interval_seconds == 3_600.0 and cfg.llm.economy_call_factor == 1.0
+    assert default_cfg().llm.max_call_interval_seconds == 86_400.0 and default_cfg().llm.economy_call_factor == 2.0
+
+
+def test_le_seuil_de_mouvement_est_atteint_a_l_egalite():
+    agent, client, clock, *_ = make([sleepy(minutes=600, move=50), reply(HOLD)])
+    agent.decide(priced(clock(), btc=60_000.0))
+    clock.advance(3_600)
+    assert agent.decide(priced(clock(), btc=30_001.0)).skipped
+    assert not agent.decide(priced(clock(), btc=30_000.0)).skipped              # -50 % pile
+
+
+def test_une_reponse_sans_cle_de_reveil_efface_le_sommeil_precedent():
+    from tradeagent.llm_agent import WAKE_KEY
+
+    agent, client, clock, storage, _ = make([sleepy(minutes=600, move=3), reply(HOLD), reply(HOLD)])
+    agent.decide(priced(clock(), btc=60_000.0))
+    clock.advance(3_600)
+    assert not agent.decide(priced(clock(), btc=66_000.0)).skipped              # réveillé par le mouvement
+    assert storage.get(WAKE_KEY) is None                                        # la nouvelle réponse ne demande rien
+    clock.advance(3_600)
+    assert not agent.decide(priced(clock(), btc=60_000.0)).skipped              # l'ancien sommeil de 10 h ne tient plus
+    assert len(client.calls) == 3
+
+
+def test_le_tableau_de_bord_annonce_le_reveil_choisi_par_l_agent(tmp_path):
+    from helpers import ScriptedAgent
+    from tradeagent.dashboard import build_snapshot
+    from tradeagent.llm_agent import LAST_CALL_KEY, PROMPT_VERSION_KEY, WAKE_KEY
+
+    path = tmp_path / "agent.db"
+    cfg = default_cfg(database=str(path))
+    clock = FakeClock()
+    storage = Storage(str(path))
+    engine, _, clock, storage = make_engine(cfg, ScriptedAgent(), clock=clock, storage=storage)
+    engine.run_cycle()
+    api = build_snapshot(cfg, now=clock())["api"]
+    assert api["next_call"] is None and api["wake_if_move_pct"] is None and api["prompt_version"] is None
+
+    storage.set(LAST_CALL_KEY, clock())
+    storage.set(PROMPT_VERSION_KEY, 2)
+    api = build_snapshot(cfg, now=clock())["api"]
+    assert api["next_call"] == clock() + cfg.llm.call_every_seconds and api["prompt_version"] == 2      # valeur écrite ci-dessus
+
+    storage.set(WAKE_KEY, {"at": clock() + 6 * 3_600, "tier": "normal", "move_pct": 3.0, "prices": {}})
+    api = build_snapshot(cfg, now=clock())["api"]
+    assert api["next_call"] == clock() + 6 * 3_600 and api["wake_if_move_pct"] == 3.0
+    late = build_snapshot(cfg, now=clock() + 7 * 3_600)["api"]                  # réveil dépassé : plus d'alerte de mouvement
+    assert late["wake_if_move_pct"] is None
+
+    storage.set(WAKE_KEY, {"at": clock() + 60, "tier": "normal", "move_pct": None, "prices": {}})
+    assert build_snapshot(cfg, now=clock())["api"]["next_call"] == clock() + cfg.llm.call_every_seconds   # jamais avant la cadence
+
+
+def test_un_entier_demesure_dans_la_reponse_ne_gache_pas_une_decision_payee():
+    huge = '{"action": "hold", "reasoning": "x", "next_check_minutes": 1' + "0" * 400 + "}"
+    agent, client, clock, storage, _ = make([reply(huge)])
+    decision = agent.decide(priced(clock()))
+    assert decision.action == "hold" and not decision.skipped                   # pas d'exception, pas d'erreur de cycle
+
+
+def test_l_arret_faute_d_ordre_possible_est_signale_une_fois_puis_leve():
+    from tradeagent.llm_agent import IDLE_KEY
+
+    agent, client, clock, storage, _ = make([reply(HOLD)])
+    for _ in range(3):
+        assert agent.decide(priced(clock(), tier="defensive")).skipped
+        clock.advance(900)
+    assert storage.get(IDLE_KEY) == {"since": START, "cause": "defensive"}
+    events = [e["message"] for e in storage.recent_events(10)]
+    assert sum("agent à l'arrêt (defensive) : aucun ordre possible" in m for m in events) == 1   # une fois, pas à chaque cycle
+    assert not agent.decide(priced(clock())).skipped                            # un ordre redevient possible
+    assert storage.get(IDLE_KEY) is None
+    assert any("agent de nouveau appelé" in e["message"] for e in storage.recent_events(10))
+
+
+def test_reset_efface_le_sommeil_et_l_arret_mais_pas_la_cadence():
+    from tradeagent.app import LIFE_KEYS, reset_life
+    from tradeagent.llm_agent import IDLE_KEY, LAST_CALL_KEY, WAKE_KEY
+
+    assert WAKE_KEY in LIFE_KEYS and IDLE_KEY in LIFE_KEYS and LAST_CALL_KEY not in LIFE_KEYS
+    agent, client, clock, storage, _ = make([sleepy(minutes=1_440), reply(HOLD)])
+    agent.decide(priced(clock()))
+    assert storage.get(WAKE_KEY) is not None
+    clock.advance(1_800)
+    reset_life(storage, clock())
+    assert storage.get(WAKE_KEY) is None
+    assert agent.decide(priced(clock())).skipped                                # la cadence payante survit au reset
+    clock.advance(1_800)
+    assert not agent.decide(priced(clock())).skipped and len(client.calls) == 2      # mais pas le sommeil de 24 h
+
+
+def test_le_tableau_de_bord_suit_le_palier_economie_et_signale_l_arret(tmp_path):
+    from helpers import ScriptedAgent
+    from tradeagent.dashboard import build_snapshot
+    from tradeagent.llm_agent import IDLE_KEY, LAST_CALL_KEY
+
+    path = tmp_path / "agent.db"
+    cfg = default_cfg(database=str(path))
+    clock = FakeClock()
+    storage = Storage(str(path))
+    engine, _, clock, storage = make_engine(cfg, ScriptedAgent(), clock=clock, storage=storage)
+    engine.run_cycle()
+    storage.set(LAST_CALL_KEY, clock())
+    for tier, factor in (("normal", 1), ("cautious", 2), ("defensive", 4)):
+        storage.set("risk_tier", tier)
+        api = build_snapshot(cfg, now=clock())["api"]
+        assert api["next_call"] == clock() + factor * cfg.llm.call_every_seconds, tier
+        assert api["min_interval_seconds"] == factor * cfg.llm.call_every_seconds
+    assert api["idle_since"] is None and build_snapshot(cfg, now=clock())["advice"] is None
+    storage.set(IDLE_KEY, {"since": clock(), "cause": "defensive"})
+    snap = build_snapshot(cfg, now=clock())
+    assert snap["api"]["idle_since"] == clock() and snap["advice"]["decision"] is True
+
+
+# -- réveil obligatoire sur une position, causes d'arrêt, conseil à l'utilisateur ------------------------------
+
+def test_reveil_obligatoire_sur_mouvement_de_prix_quand_l_agent_detient_une_position():
+    from tradeagent.llm_agent import WAKE_KEY
+
+    # Il demande 24 h de sommeil sans réveil sur prix, en détenant du BTC : le code impose le seuil de la config.
+    agent, client, clock, storage, _ = make([sleepy(minutes=1_440), reply(HOLD)])
+    agent.decide(priced(clock(), positions=HELD))
+    assert storage.get(WAKE_KEY)["move_pct"] == 3.0
+    clock.advance(3_600)
+    moved = {**HELD, "BTC/EUR": {**HELD["BTC/EUR"], "price": 58_200.0}}         # -3 %
+    calm = {**HELD, "BTC/EUR": {**HELD["BTC/EUR"], "price": 59_000.0}}
+    assert agent.decide(priced(clock(), positions=calm)).skipped
+    assert not agent.decide(priced(clock(), positions=moved)).skipped and len(client.calls) == 2
+
+    for asked, kept in ((10, 3.0), (3, 3.0), (1.5, 1.5)):                       # plus serré oui, plus large non
+        agent, _, clock, storage, _ = make([sleepy(minutes=600, move=asked)])
+        agent.decide(priced(clock(), positions=HELD))
+        assert storage.get(WAKE_KEY)["move_pct"] == kept, asked
+
+    # Sans position, rien d'imposé : en cash, dormir ne laisse rien sans surveillance.
+    agent, _, clock, storage, _ = make([sleepy(minutes=600), sleepy(minutes=600, move=10)])
+    agent.decide(priced(clock()))
+    assert storage.get(WAKE_KEY)["move_pct"] is None
+    clock.advance(36_000)
+    agent.decide(priced(clock()))
+    assert storage.get(WAKE_KEY)["move_pct"] == 10.0
+
+    # Même une poussière compte comme une position : on ne dort pas dessus sans réveil.
+    agent, _, clock, storage, _ = make([sleepy(minutes=600)])
+    agent.decide(priced(clock(), positions=DUST))
+    assert storage.get(WAKE_KEY)["move_pct"] == 3.0
+
+    tight, _, clock, storage, _ = make([sleepy(minutes=600)], position_wake_move_pct=1.0)
+    tight.decide(priced(clock(), positions=HELD))
+    assert storage.get(WAKE_KEY)["move_pct"] == 1.0
+
+
+def test_le_seuil_de_reveil_impose_est_valide_dans_la_config():
+    from tradeagent.config import ConfigError
+
+    for bad in (0.4, 51, "3", float("inf")):
+        with pytest.raises(ConfigError):
+            default_cfg(llm={"position_wake_move_pct": bad})
+    assert default_cfg().llm.position_wake_move_pct == 3.0
+
+
+def test_les_causes_d_arret_distinguent_le_temporaire_du_sans_issue():
+    cause = LLMAgent.idle_cause
+    assert cause(priced(START, limits=LIMITS)) is None
+    assert cause(priced(START, tier="defensive", positions=HELD)) is None       # il peut vendre
+    assert cause(priced(START, tier="defensive")) == "defensive"
+    assert cause(priced(START, tier="defensive", limits={**LIMITS, "buys_left_today": 0}, cash=1.0)) == "defensive"
+    assert cause(priced(START, limits=LIMITS, cash=4.99)) == "cash"
+    assert cause(priced(START, limits={**LIMITS, "buys_left_today": 0}, cash=4.99)) == "cash"   # sans issue avant temporaire
+    assert cause(priced(START, limits={**LIMITS, "buys_left_today": 0})) == "daily"
+    assert cause(priced(START, limits=LIMITS, equity=47.49, cash=47.49)) == "daily"
+
+
+def test_la_cause_d_arret_est_mise_a_jour_sans_perdre_la_date():
+    from tradeagent.llm_agent import IDLE_KEY
+
+    agent, _, clock, storage, _ = make([])
+    agent.decide(priced(clock(), limits={**LIMITS, "buys_left_today": 0}))
+    assert storage.get(IDLE_KEY) == {"since": START, "cause": "daily"}
+    clock.advance(900)
+    agent.decide(priced(clock(), tier="defensive"))
+    assert storage.get(IDLE_KEY) == {"since": START, "cause": "defensive"}       # la cause change, pas le début
+    assert sum("agent à l'arrêt" in e["message"] for e in storage.recent_events(10)) == 2
+
+
+def test_le_conseil_dresse_le_bilan_et_laisse_l_utilisateur_decider():
+    from tradeagent.advice import idle_advice
+
+    lost = idle_advice("defensive", stake=50.0, equity=50.4, rent=12.9, currency="EUR")
+    assert lost["decision"] is True and lost["title"] == "Agent à l'arrêt : à toi de décider"
+    assert "+0.40 EUR en trading, 12.90 EUR d'API consommés, soit -12.50 EUR net" in lost["text"]
+    assert "mettre fin à cette vie (tradeagent reset)" in lost["text"] and "n'a pas couvert son loyer" in lost["text"]
+    assert lost["net"] == pytest.approx(-12.5) and lost["trading"] == pytest.approx(0.4) and lost["rent"] == 12.9
+
+    won = idle_advice("cash", stake=50.0, equity=58.0, rent=3.0, currency="EUR")
+    assert won["decision"] is True and "soit +5.00 EUR net" in won["text"]
+    assert "a couvert son loyer" in won["text"] and "plus assez de cash" in won["text"]
+    assert "n'a pas couvert" not in won["text"]
+    even = idle_advice("defensive", stake=50.0, equity=53.0, rent=3.0, currency="EUR")
+    assert "a couvert son loyer" in even["text"]                                # pile à l'équilibre : loyer couvert
+
+    wait = idle_advice("daily", stake=50.0, equity=49.0, rent=0.5, currency="EUR")
+    assert wait["decision"] is False and "reprennent demain (UTC)" in wait["text"] and "reset" not in wait["text"]
+
+
+def test_status_et_tableau_de_bord_donnent_le_conseil(tmp_path, monkeypatch, capsys):
+    from helpers import ScriptedAgent
+    from tradeagent import cli
+    from tradeagent.dashboard import build_snapshot
+    from tradeagent.llm_agent import IDLE_KEY
+
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "config.yaml").write_text("database: data/agent.db\n", encoding="utf-8")
+    cfg = default_cfg(database="data/agent.db")
+    clock = FakeClock()
+    storage = Storage("data/agent.db")
+    engine, _, clock, storage = make_engine(cfg, ScriptedAgent(), clock=clock, storage=storage)
+    engine.run_cycle()
+    storage.record_llm_call(clock(), "m", 0, 0, 0, 0, 26.0)
+    storage.set(IDLE_KEY, {"since": clock(), "cause": "defensive"})
+    snap = build_snapshot(cfg, now=clock())
+    assert snap["advice"]["decision"] is True and snap["advice"]["net"] == pytest.approx(-26.0)
+    assert "26.00 EUR d'API consommés" in snap["advice"]["text"]
+    storage.close()
+    assert cli.main(["status"]) == 0
+    out = capsys.readouterr().out
+    assert "AGENT À L'ARRÊT : À TOI DE DÉCIDER" in out and "mettre fin à cette vie (tradeagent reset)" in out

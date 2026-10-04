@@ -19,6 +19,8 @@ Ne pas rouvrir une décision sans raison. Toute nouvelle décision de Pierre s'a
 | Le loyer d'API sort de la mise : kill switch, plus-haut et paliers jugent l'equity nette du loyer (2026-10-04) | Décision de Pierre. Sans cela un bot en cash qui appelle le LLM ne mourait jamais |
 | Clonage par variantes, inspiré d'automaton : le parent transmet une note de stratégie, une graine aléatoire fait varier les paramètres ; l'enfant est financé par les gains du parent, jamais par de l'argent neuf (2026-10-04) | Décision de Pierre. L'agent propose, le code dispose ; pas d'auto-modification du code |
 | Caisse de l'utilisateur : part des gains mise de côté, configurable, 50/50 pour commencer (2026-10-04) | Décision de Pierre. Écriture comptable, aucun retrait ni transfert dans le code |
+| Un bot à l'arrêt sans issue ne meurt pas tout seul : il est signalé, le code dresse le bilan et conseille, l'utilisateur décide (2026-10-04) | Décision de Pierre. Il juge au vu de ce que l'agent a rapporté et consommé |
+| Réveil sur mouvement de prix obligatoire quand l'agent dort en détenant une position (2026-10-04) | Décision de Pierre. Sinon la position n'est surveillée que par le kill switch pendant le sommeil |
 | L'application reste en lecture seule pour l'instant ; réglage de la température de l'agent à terme (2026-10-04) | Décision de Pierre |
 | Paliers : 15 % / 25 % / mort à 40 % de drawdown ou 50 % de perte totale | On réduit la voilure avant la mort |
 | Quarantaine **asynchrone** (future) | Attendre la confirmation ne doit pas bloquer les contrôles du kill switch |

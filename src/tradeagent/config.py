@@ -139,6 +139,9 @@ class LLMConfig:
     model: str = "claude-haiku-4-5-20251001"
     max_output_tokens: int = 400
     call_every_seconds: float = 3600.0
+    max_call_interval_seconds: float = 86_400.0
+    economy_call_factor: float = 2.0
+    position_wake_move_pct: float = 3.0
     price_input_per_mtok_usd: float = 1.0
     price_output_per_mtok_usd: float = 5.0
     usd_to_eur: float = 0.90
@@ -155,6 +158,13 @@ class LLMConfig:
         if self.max_output_tokens > 4096:
             raise ConfigError("llm.max_output_tokens: 4096 au maximum (une décision tient en quelques lignes)")
         _set(self, "call_every_seconds", _number(w, "call_every_seconds", self.call_every_seconds, ge=60))
+        _set(self, "max_call_interval_seconds",
+             _number(w, "max_call_interval_seconds", self.max_call_interval_seconds, ge=60, le=7 * 86_400))
+        if self.max_call_interval_seconds < self.call_every_seconds:
+            raise ConfigError("llm: max_call_interval_seconds ne peut pas être inférieur à call_every_seconds")
+        _set(self, "economy_call_factor", _number(w, "economy_call_factor", self.economy_call_factor, ge=1, le=10))
+        _set(self, "position_wake_move_pct",
+             _number(w, "position_wake_move_pct", self.position_wake_move_pct, ge=0.5, le=50))
         _set(self, "price_input_per_mtok_usd",
              _number(w, "price_input_per_mtok_usd", self.price_input_per_mtok_usd, ge=0))
         _set(self, "price_output_per_mtok_usd",

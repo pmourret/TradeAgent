@@ -16,6 +16,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from .advice import idle_advice
 from .budget import day_start_ts
 from .config import Config
 from .portfolio import base_currency
@@ -117,6 +118,14 @@ def _fill(snap: dict[str, Any], db: sqlite3.Connection, cfg: Config, now: float)
     spent_total = _spend(db, 0.0)
     spent_today = _spend(db, day_start_ts(now))
     llm_last = _kv(db, "llm_last_call")
+    wake = _kv(db, "llm_wake") or {}
+    idle = _kv(db, "llm_idle")
+    idle = idle if isinstance(idle, dict) else {}
+    # Le prochain appel possible : le réveil choisi par l'agent s'il dort, sinon l'intervalle minimal du palier
+    # (palier « économie » : il s'allonge en prudent et en défensif).
+    steps = {"cautious": 1, "defensive": 2}.get(_kv(db, "risk_tier", "normal"), 0)
+    min_interval = min(cfg.llm.call_every_seconds * cfg.llm.economy_call_factor ** steps, cfg.llm.max_call_interval_seconds)
+    next_call = max(float(wake.get("at") or 0.0), llm_last + min_interval) if llm_last else None
     calls_life = db.execute("SELECT COUNT(*) FROM llm_calls WHERE ts >= ?", (started,)).fetchone()[0]
 
     # -- positions ------------------------------------------------------------
@@ -173,6 +182,8 @@ def _fill(snap: dict[str, Any], db: sqlite3.Connection, cfg: Config, now: float)
             },
         },
         "day": day_view,
+        # Agent à l'arrêt : bilan et conseil pour l'utilisateur, qui décide. Texte fabriqué par le code, jamais par l'agent.
+        "advice": idle_advice(str(idle["cause"]), stake, equity, spent_life, ccy) if idle.get("cause") else None,
         "positions": positions,
         "equity_series": downsample(series),
         "api": {
@@ -182,7 +193,11 @@ def _fill(snap: dict[str, Any], db: sqlite3.Connection, cfg: Config, now: float)
             "daily_budget": cfg.llm.daily_budget_eur, "total_budget": cfg.llm.total_budget_eur,
             "call_every_seconds": cfg.llm.call_every_seconds,
             "last_call": llm_last,
-            "next_call": (llm_last + cfg.llm.call_every_seconds) if llm_last else None,
+            "next_call": next_call,
+            "wake_if_move_pct": wake.get("move_pct") if llm_last and wake.get("at", 0.0) > now else None,
+            "prompt_version": _kv(db, "llm_prompt_version"),
+            "min_interval_seconds": min_interval,
+            "idle_since": idle.get("since"),        # l'agent n'est plus appelé : aucun ordre possible
             "per_day": _api_per_day(db, now),
         },
         "journal": _rows(db, "SELECT * FROM decisions ORDER BY id DESC LIMIT ?", (JOURNAL_ROWS,)),

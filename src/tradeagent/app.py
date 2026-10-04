@@ -16,7 +16,9 @@ from .llm_agent import LLMAgent
 from .paper import PaperExchange
 from .storage import Storage
 
-LIFE_KEYS = ("life", "paper_balances", "killswitch", "peak_equity", "day", "risk_tier")
+# `llm_wake` et `llm_idle` : le sommeil et l'arrêt de l'agent appartiennent à la vie qui les a décidés.
+# `llm_last_call` n'y est pas, exprès : la cadence des appels payants survit à un reset.
+LIFE_KEYS = ("life", "paper_balances", "killswitch", "peak_equity", "day", "risk_tier", "llm_wake", "llm_idle")
 AGENT_KINDS = ("hold", "chaos", "llm", "llm-fake")
 
 

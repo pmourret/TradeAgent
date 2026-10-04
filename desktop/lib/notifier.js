@@ -19,6 +19,7 @@ const TIERS = new Set(["normal", "cautious", "defensive"]);
 const STALE_CYCLES = 3;          // « sans cycle depuis trop longtemps » : 3 cycles manqués...
 const STALE_MARGIN_S = 120;      // ... plus une marge (un cycle avec appel au LLM peut durer)
 const REASON_MAX = 160;
+const ADVICE_MAX = 500;
 
 const num = (v) => (typeof v === "number" && Number.isFinite(v) ? v : null);
 
@@ -41,6 +42,7 @@ function digest(snap, prev, running) {
   const cycle = num(snap.cycle_seconds) > 0 ? snap.cycle_seconds : 0;
   const d = {
     at, life: null, state: null, reason: "", tier: null, budget: "ok", lastCycle: null, stale: false, silence: 0,
+    undecided: false, advice: "",
     // Depuis quand on voit ce bot tourner : un bot qu'on vient de démarrer a forcément de vieilles données.
     runningSince: running ? (prev && prev.runningSince !== null ? prev.runningSince : at) : null,
   };
@@ -53,6 +55,11 @@ function digest(snap, prev, running) {
     d.life = num((snap.life || {}).started);
     d.budget = budgetState(snap.api);
     d.lastCycle = num((snap.money || {}).last_update);
+    // Agent à l'arrêt sans issue : l'utilisateur doit trancher. Le texte du conseil est fabriqué par le code
+    // (advice.py) à partir de nombres, jamais par l'agent.
+    const advice = snap.advice && typeof snap.advice === "object" ? snap.advice : null;
+    d.undecided = Boolean(advice && advice.decision === true && d.state === "alive");
+    d.advice = d.undecided ? String(advice.text || "").slice(0, ADVICE_MAX) : "";
   }
   if (d.runningSince !== null && cycle > 0 && d.state !== "dead" && d.state !== "halted") {
     const since = Math.max(d.lastCycle === null ? 0 : d.lastCycle, d.runningSince);
@@ -108,6 +115,9 @@ function transitions(name, prev, next) {
       title: `Bot « ${name} » : budget API du jour épuisé`,
       body: "L'agent est en pause jusqu'à demain (UTC). Le kill switch et les garde-fous continuent de tourner.",
     });
+  }
+  if (next.undecided && !prev.undecided) {
+    out.push({ kind: "idle", title: `Le bot « ${name} » est à l'arrêt : à toi de décider`, body: next.advice });
   }
   if (next.budget !== prev.budget && next.budget === "total") {
     out.push({

@@ -160,3 +160,23 @@ test("le veilleur notifie sur transition, garde l'état connu si la lecture éch
   await first;
   assert.equal(asked.length, 6);
 });
+
+test("un agent à l'arrêt sans issue notifie une fois, avec le conseil fabriqué par le code", () => {
+  const advice = { decision: true, title: "Agent à l'arrêt : à toi de décider", text: "Bilan de cette vie : -12.50 EUR net. Conseil : mettre fin à cette vie (tradeagent reset)." };
+  const stuck = snap({ advice });
+  const notes = between(snap(), stuck);
+  assert.deepEqual(kinds(notes), ["idle"]);
+  assert.match(notes[0].title, /« llm » est à l'arrêt : à toi de décider/);
+  assert.equal(notes[0].body, advice.text);
+  assert.deepEqual(between(stuck, { ...stuck, generated_at: T0 + 15 }), []);          // déjà dit
+  assert.deepEqual(between(stuck, snap({ generated_at: T0 + 15 })), []);              // reparti : silence
+
+  // Une simple pause jusqu'à demain ne dérange pas l'utilisateur, et un bot mort a déjà sa notification.
+  assert.deepEqual(between(snap(), snap({ advice: { ...advice, decision: false } })), []);
+  assert.deepEqual(kinds(between(snap(), snap({ advice, status: { state: "dead", reason: "x" } }))), ["dead"]);
+  for (const bad of [null, "texte", { decision: "true", text: "x" }, { text: "x" }]) {
+    assert.deepEqual(between(snap(), snap({ advice: bad })), []);
+  }
+  const long = between(snap(), snap({ advice: { decision: true, text: "a".repeat(5000) } }));
+  assert.equal(long[0].body.length, 500);
+});

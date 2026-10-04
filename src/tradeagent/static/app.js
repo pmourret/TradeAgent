@@ -86,6 +86,12 @@
       return { tone: "orange", label: "Arrêté", icon: "halted", sub: "Sans liquidation · reprise manuelle",
         banner: ["Bot arrêté (sans liquidation)", reason + "Les positions sont conservées. Cherche la cause, puis « tradeagent resume »."] };
     }
+    if (s.advice) {
+      // Agent à l'arrêt : le code dresse le bilan et conseille, l'utilisateur décide.
+      return s.advice.decision
+        ? { tone: "orange", label: "À l'arrêt", icon: "halted", sub: "À toi de décider", banner: [s.advice.title, s.advice.text] }
+        : { tone: "warn", label: "En pause", icon: "cautious", sub: "Reprise demain (UTC)", banner: [s.advice.title, s.advice.text] };
+    }
     if (s.risk_tier === "defensive") {
       return { tone: "orange", label: "Palier défensif", icon: "defensive", sub: "Achats bloqués, ventes seulement",
         banner: ["Palier défensif : achats bloqués", "Drawdown de " + dd + " % depuis le plus haut. L'agent ne peut plus que vendre jusqu'à ce que l'equity nette du loyer remonte."] };
@@ -371,10 +377,12 @@
     else if (s.status.state === "halted") note = "Bot arrêté : plus aucun appel tant que tu ne le reprends pas.";
     else if (a.spent_total >= a.total_budget) note = "Budget total épuisé : l'agent ne décide plus. Seul le kill switch veille encore.";
     else if (a.spent_today >= a.daily_budget) note = "Budget du jour épuisé : l'agent ne décide plus avant demain (UTC).";
+    else if (s.advice) note = s.advice.title + ". Il n'est plus appelé et ne paie plus de loyer.";
     else if (a.calls_life === 0 && s.agent !== "llm") note = "Aucun appel LLM : cet agent n'utilise pas l'API.";
     else if (a.next_call) {
       const wait = a.next_call - s.generated_at;
       note = wait > 60 ? "Prochain appel dans " + dur(wait) + "." : "Prochain appel imminent.";
+      if (wait > 60 && a.wake_if_move_pct) note += " Réveil anticipé si un prix bouge de " + num(a.wake_if_move_pct, 1) + " %.";
     }
     $("apiNote").textContent = note;
   }

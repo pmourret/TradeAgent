@@ -10,6 +10,7 @@ from dataclasses import replace
 from datetime import datetime, timezone
 from pathlib import Path
 
+from .advice import idle_advice
 from .app import AGENT_KINDS, build_agent, build_engine, build_feed, reset_life
 from .backtest import (BACKTEST_AGENTS, DEFAULT_AGENTS, compare, format_table, market_return_pct, run_backtest,
                        warmup_seconds)
@@ -168,6 +169,10 @@ def _print_status(cfg) -> int:
                         peak * (1 - cfg.killswitch.max_drawdown_pct / 100))
             print(f"equity nette du loyer : {last['equity'] - spent_life:.2f} {ccy} (loyer {spent_life:.4f} ; "
                   f"mort sous {floor:.2f})")
+    idle = storage.get("llm_idle")
+    if last and isinstance(idle, dict) and idle.get("cause") and ks.status == "alive":
+        advice = idle_advice(str(idle["cause"]), life["stake"], last["equity"], spent_life, ccy)
+        print(f"{advice['title'].upper()}\n  {advice['text']}")
     balances = storage.get("paper_balances") or {}
     held = {k: v for k, v in balances.items() if v}
     print("soldes :", ", ".join(f"{k} {v:.6g}" for k, v in held.items()) or "—")

@@ -121,6 +121,9 @@ class Storage:
         )
         self._db.commit()
 
+    def llm_calls_since(self, ts: float) -> int:
+        return int(self._db.execute("SELECT COUNT(*) FROM llm_calls WHERE ts >= ?", (ts,)).fetchone()[0])
+
     def llm_spend_since(self, ts: float) -> float:
         row = self._db.execute(
             "SELECT COALESCE(SUM(cost_eur), 0) AS total FROM llm_calls WHERE ts >= ?", (ts,)

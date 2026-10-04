@@ -177,16 +177,28 @@ def test_la_serie_nette_cumule_le_loyer_paye_avant_chaque_point():
 
 
 def test_en_backtest_un_agent_trop_cher_cesse_de_payer_quand_il_ne_peut_plus_agir():
-    cfg = default_cfg(stake=50.0, llm={"price_input_per_mtok_usd": 20_000.0, "price_output_per_mtok_usd": 20_000.0,
+    from tradeagent.llm import LLMReply, LLMUsage
+
+    class AlwaysHold:
+        """Un LLM qui ne trade jamais et coûte 1,80 EUR par appel (1 000 tokens à 2 000 USD le million)."""
+
+        calls = 0
+
+        def complete(self, system, user, max_output_tokens):
+            self.calls += 1
+            return LLMReply('{"action": "hold", "reasoning": "rien"}', LLMUsage(input_tokens=1_000), "m")
+
+    cfg = default_cfg(stake=50.0, llm={"price_input_per_mtok_usd": 2_000.0, "price_output_per_mtok_usd": 2_000.0,
                                        "daily_budget_eur": 1_000.0, "total_budget_eur": 1_000.0})
     start = 1_760_000_400.0
-    history = synthetic_history(cfg.symbols, "1h", start - warmup_seconds(cfg), start + 2 * 86_400, seed=1, volatility=0.0001)
-    result = run_backtest(cfg, "llm-fake", history, start, start + 2 * 86_400, seed=1)
+    history = synthetic_history(cfg.symbols, "1h", start - warmup_seconds(cfg), start + 3 * 86_400, seed=1, volatility=0.0001)
+    client = AlwaysHold()
+    result = run_backtest(cfg, "llm", history, start, start + 3 * 86_400, llm_client=client)
     # Le loyer l'a mené au palier défensif (25 % sous le plus-haut net) : en cash, achats bloqués, il ne peut plus
     # rien faire. Il n'est donc plus appelé : il ne paie plus, et n'atteint pas le seuil de mort (40 %).
     assert result.status == "alive" and result.orders == 0
     assert result.final_equity == 50.0                                          # rien perdu en trading
-    assert 12.5 <= result.api_cost < 20.0                                       # entre 25 % et 40 % de la mise
+    assert client.calls == 7 and result.api_cost == pytest.approx(12.6)         # 7 x 1,80 : juste au-delà de 25 %
     assert result.net_result == pytest.approx(result.final_equity - 50.0 - result.api_cost)
     assert result.max_drawdown_pct == pytest.approx(result.api_cost / 50.0 * 100)   # le drawdown affiché est net
 

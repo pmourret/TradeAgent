@@ -142,6 +142,8 @@ class LLMConfig:
     max_call_interval_seconds: float = 86_400.0
     economy_call_factor: float = 2.0
     position_wake_move_pct: float = 3.0
+    quiet_call_interval_seconds: float | None = None
+    wake_move_pct: float | None = None
     price_input_per_mtok_usd: float = 1.0
     price_output_per_mtok_usd: float = 5.0
     usd_to_eur: float = 0.90
@@ -165,6 +167,13 @@ class LLMConfig:
         _set(self, "economy_call_factor", _number(w, "economy_call_factor", self.economy_call_factor, ge=1, le=10))
         _set(self, "position_wake_move_pct",
              _number(w, "position_wake_move_pct", self.position_wake_move_pct, ge=0.5, le=50))
+        # Appels sur évènement : None = comportement d'origine (un appel à chaque intervalle minimal).
+        if self.quiet_call_interval_seconds is not None:
+            _set(self, "quiet_call_interval_seconds",
+                 _number(w, "quiet_call_interval_seconds", self.quiet_call_interval_seconds,
+                         ge=self.call_every_seconds, le=self.max_call_interval_seconds))
+        if self.wake_move_pct is not None:
+            _set(self, "wake_move_pct", _number(w, "wake_move_pct", self.wake_move_pct, ge=0.5, le=50))
         _set(self, "price_input_per_mtok_usd",
              _number(w, "price_input_per_mtok_usd", self.price_input_per_mtok_usd, ge=0))
         _set(self, "price_output_per_mtok_usd",

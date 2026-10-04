@@ -259,7 +259,7 @@ def workdir(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
     (tmp_path / "config.yaml").write_text("database: data/agent.db\nstake: 50\n", encoding="utf-8")
-    monkeypatch.setattr(cli, "AnthropicClient", lambda model: pytest.fail("vrai client Anthropic construit dans un test"))
+    monkeypatch.setattr(cli, "AnthropicClient", lambda model, **kwargs: pytest.fail("vrai client Anthropic construit dans un test"))
     return tmp_path
 
 
@@ -278,13 +278,13 @@ def test_le_vrai_llm_exige_un_plafond_raisonnable(workdir, capsys):
 def test_la_commande_applique_le_plafond_du_backtest_et_pas_un_autre(workdir, monkeypatch, capsys):
     monkeypatch.setenv("ANTHROPIC_API_KEY", "clé-de-test")
     inner = Inner(input_tokens=5_000)                                       # appels chers : environ 0.0047 EUR pièce
-    monkeypatch.setattr(cli, "AnthropicClient", lambda model: inner)
-    assert cli.main([*ARGS, "--max-api-eur", "0.04", "--yes"]) == 0
+    monkeypatch.setattr(cli, "AnthropicClient", lambda model, **kwargs: inner)
+    assert cli.main([*ARGS, "--max-api-eur", "0.06", "--yes"]) == 0
     out = capsys.readouterr().out
     assert 1 <= inner.calls < 24                                            # arrêté par le plafond, pas par la fin
     assert "halted" in out and "plafond de dépense réelle de ce backtest" in out
     paid = float(out.split("appels payés (")[1].split(" €")[0])
-    assert 0 < paid <= 0.04
+    assert 0 < paid <= 0.06
 
 
 def test_la_commande_applique_le_plafond_cumule_de_la_config(workdir, monkeypatch, capsys):
@@ -293,20 +293,20 @@ def test_la_commande_applique_le_plafond_cumule_de_la_config(workdir, monkeypatc
     cache.parent.mkdir(parents=True)
     usage = {"input_tokens": 1, "output_tokens": 1, "cache_read_tokens": 0, "cache_write_tokens": 0}
     row = {"call": "1", "key": "ancien", "ts": 1, "model": "m", "text": HOLD, "usage": usage}
-    cache.write_text(json.dumps({**row, "cost_eur": 9.96}) + "\n", encoding="utf-8")
+    cache.write_text(json.dumps({**row, "cost_eur": 9.95}) + "\n", encoding="utf-8")
     inner = Inner(input_tokens=5_000)                                       # environ 0.0047 EUR pièce
-    monkeypatch.setattr(cli, "AnthropicClient", lambda model: inner)
+    monkeypatch.setattr(cli, "AnthropicClient", lambda model, **kwargs: inner)
     assert cli.main([*ARGS, "--max-api-eur", "0.50", "--yes"]) == 0
     out = capsys.readouterr().out
     assert 1 <= inner.calls < 24                                            # arrêté par llm.total_budget_eur (10 EUR)
-    assert "déjà payé par les backtests précédents : 9.96 € sur 10.00 €" in out
+    assert "déjà payé par les backtests précédents : 9.95 € sur 10.00 €" in out
     assert "plafond de dépense réelle de tous les backtests" in out
     assert ReplyCache(cache).spent_lifetime <= 10.0
 
     # Cumul presque épuisé : l'estimation ne tient plus dedans, on refuse de lancer.
     cache.write_text(json.dumps({**row, "cost_eur": 9.999}) + "\n", encoding="utf-8")
     fresh = Inner()
-    monkeypatch.setattr(cli, "AnthropicClient", lambda model: fresh)
+    monkeypatch.setattr(cli, "AnthropicClient", lambda model, **kwargs: fresh)
     assert cli.main([*ARGS, "--max-api-eur", "0.50", "--yes"]) == 2
     assert "plafond cumulé des backtests" in capsys.readouterr().err and fresh.calls == 0
 
@@ -316,7 +316,7 @@ def test_un_seul_backtest_payant_a_la_fois(workdir, monkeypatch, capsys):
 
     monkeypatch.setenv("ANTHROPIC_API_KEY", "clé-de-test")
     inner = Inner()
-    monkeypatch.setattr(cli, "AnthropicClient", lambda model: inner)
+    monkeypatch.setattr(cli, "AnthropicClient", lambda model, **kwargs: inner)
     with InstanceLock(workdir / "data" / "llm-cache" / "backtest.jsonl"):   # un autre backtest payant est en cours
         assert cli.main([*ARGS, "--max-api-eur", "0.50", "--yes"]) == 2
         assert "un autre backtest avec le vrai LLM est déjà en cours" in capsys.readouterr().err
@@ -357,7 +357,7 @@ def test_une_estimation_au_dessus_du_plafond_refuse_de_lancer(workdir, monkeypat
 def test_apres_confirmation_les_appels_sont_payes_une_fois_puis_relus_du_cache(workdir, monkeypatch, capsys):
     monkeypatch.setenv("ANTHROPIC_API_KEY", "clé-de-test")
     inner = Inner()
-    monkeypatch.setattr(cli, "AnthropicClient", lambda model: inner)
+    monkeypatch.setattr(cli, "AnthropicClient", lambda model, **kwargs: inner)
     monkeypatch.setattr("builtins.input", lambda prompt: " OUI ")
     assert cli.main([*ARGS, "--max-api-eur", "0.50"]) == 0
     out = capsys.readouterr().out
@@ -376,7 +376,7 @@ def test_apres_confirmation_les_appels_sont_payes_une_fois_puis_relus_du_cache(w
 def test_yes_saute_la_question_mais_pas_le_plafond(workdir, monkeypatch, capsys):
     monkeypatch.setenv("ANTHROPIC_API_KEY", "clé-de-test")
     inner = Inner()
-    monkeypatch.setattr(cli, "AnthropicClient", lambda model: inner)
+    monkeypatch.setattr(cli, "AnthropicClient", lambda model, **kwargs: inner)
     monkeypatch.setattr("builtins.input", lambda prompt: pytest.fail("question posée malgré --yes"))
     assert cli.main([*ARGS, "--max-api-eur", "0.50", "--yes"]) == 0
     assert inner.calls == 24

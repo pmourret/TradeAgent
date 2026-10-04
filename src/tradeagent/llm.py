@@ -49,7 +49,7 @@ class AnthropicClient:
     """API Messages d'Anthropic. La clé vient de ANTHROPIC_API_KEY (jamais dans un prompt ni un log)."""
 
     def __init__(self, model: str, api_key: str | None = None, client: Any = None,
-                 timeout: float = 45.0, max_retries: int = 2) -> None:
+                 timeout: float = 45.0, max_retries: int = 2, output_schema: dict | None = None) -> None:
         if client is None:
             try:
                 import anthropic
@@ -59,14 +59,21 @@ class AnthropicClient:
             client = anthropic.Anthropic(api_key=key, timeout=timeout, max_retries=max_retries)
         self._client = client
         self._model = model
+        self._output_schema = output_schema
 
     def complete(self, system: str, user: str, max_output_tokens: int) -> LLMReply:
+        extra: dict[str, Any] = {}
+        if self._output_schema is not None:
+            # Sorties structurées : l'API contraint la réponse au schéma. Sans cela, une réponse sur cinq était de
+            # la prose au lieu du JSON demandé, payée pour rien (backtest réel du 2026-10-04).
+            extra["output_config"] = {"format": {"type": "json_schema", "schema": self._output_schema}}
         try:
             response = self._client.messages.create(
                 model=self._model,
                 max_tokens=max_output_tokens,
                 system=system,
                 messages=[{"role": "user", "content": user}],
+                **extra,
             )
         except Exception as exc:  # famille anthropic.APIError, réseau, timeout
             raise LLMError(f"appel Anthropic échoué : {type(exc).__name__}: {exc}") from exc

@@ -23,6 +23,7 @@ from .replay import load_history, public_client, synthetic_history
 from .killswitch import KillSwitch, KillSwitchError
 from .launcher import build_jobs, describe, preflight, resolve_profiles, run_jobs
 from .llm import AnthropicClient, LLMError, require_api_key
+from .llm_agent import DECISION_SCHEMA
 from .llm_cache import CachingLLMClient, EstimatingClient, ReplyCache
 from .lock import InstanceLock
 from .profiles import LIVE, PROFILES, apply_profile, get_profile
@@ -311,7 +312,8 @@ def _backtest_llm_client(cfg, args: argparse.Namespace, history, start: float, e
             if answer.strip().lower() != "oui":
                 print("abandonné : rien n'a été dépensé.")
                 return None
-    return CachingLLMClient(lambda: AnthropicClient(cfg.llm.model), cache, cfg.llm.model, cost_of,
+    return CachingLLMClient(lambda: AnthropicClient(cfg.llm.model, output_schema=DECISION_SCHEMA), cache,
+                            cfg.llm.model, cost_of,
                             run_cap_eur=args.max_api_eur, total_cap_eur=cfg.llm.total_budget_eur)
 
 

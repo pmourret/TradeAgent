@@ -148,8 +148,8 @@ def test_prompt_is_compact_complete_and_free_of_secrets(monkeypatch):
     data = json.loads(user.split("\n", 1)[1])
     assert data["risk_tier"] == "normal" and data["limits"]["max_order_quote"] == 10.0
     assert set(data["market"]) == {"BTC/EUR", "ETH/EUR"}
-    assert data["your_api_budget_left_eur"]["today"] <= 1.0
-    assert "hold" in SYSTEM_PROMPT and "valid action" in SYSTEM_PROMPT
+    assert data["api_safety_caps_left"]["today"] <= 1.0 and "your_api_budget_left_eur" not in data
+    assert "hold" in SYSTEM_PROMPT and "not money you own" in SYSTEM_PROMPT
 
 
 def test_prompt_never_exposes_guardrail_internals():
@@ -220,12 +220,18 @@ def test_le_prompt_donne_les_vrais_frais_le_loyer_et_les_bornes_de_reveil():
     agent.decide(view())
     system, user, _ = client.calls[0]
     data = json.loads(user.split("\n", 1)[1])
-    assert data["costs"] == {"fee_pct": 0.1, "slippage_pct": 0.05}              # ceux de la config, pas un texte figé
+    # Ceux de la config, pas un texte figé ; l'aller-retour est donné tout calculé (0,15 % par sens, 0,30 % les deux).
+    assert data["costs"] == {"fee_pct": 0.1, "slippage_pct": 0.05, "one_way_pct": 0.15, "round_trip_pct": 0.3}
+    assert data["api_cost_per_call"] == 0.13                                    # un seul appel dans cette vie
     assert data["api_cost_so_far"] == 0.13 and data["net_equity"] == 49.87 and data["equity"] == 50.0
-    assert data["call_interval_minutes"] == {"min": 60, "max": 1440, "wake_move_pct_while_holding": 3.0}
-    assert "0.1%" not in system and '"costs"' in system and "net_equity" in system
+    assert data["call_interval_minutes"] == {"min": 60, "max": 1440, "default": 60, "default_wake_move_pct": None,
+                                             "wake_move_pct_while_holding": 3.0}
+    assert "0.1%" not in system and "round_trip_pct" in system and "net_equity" in system
+    # L'inaction n'est pas présentée comme une réussite, et les plafonds d'API ne sont pas « son » argent.
+    assert "usually the right one" not in system and "counts as failure" in system
+    assert "api_safety_caps_left" in system and "api_cost_per_call" in system
     assert "next_check_minutes" in system and "wake_if_move_pct" in system
-    assert storage.get(PROMPT_VERSION_KEY) == PROMPT_VERSION == 3
+    assert storage.get(PROMPT_VERSION_KEY) == PROMPT_VERSION == 5
 
 
 def test_les_cles_de_reveil_sont_lues_avec_prudence():
@@ -607,3 +613,123 @@ def test_status_et_tableau_de_bord_donnent_le_conseil(tmp_path, monkeypatch, cap
     assert cli.main(["status"]) == 0
     out = capsys.readouterr().out
     assert "AGENT À L'ARRÊT : À TOI DE DÉCIDER" in out and "mettre fin à cette vie (tradeagent reset)" in out
+
+
+# -- appels sur évènement décidés par le code, format de réponse imposé par l'API ------------------------------
+
+EVENTS = {"quiet_call_interval_seconds": 43_200, "wake_move_pct": 2.0}
+
+
+def test_sans_demande_de_l_agent_le_code_impose_le_delai_de_calme_et_le_seuil_de_mouvement():
+    from tradeagent.llm_agent import WAKE_KEY
+
+    agent, client, clock, storage, _ = make([reply(HOLD)] * 3, **EVENTS)
+    agent.decide(priced(clock(), btc=60_000.0))
+    wake = storage.get(WAKE_KEY)
+    assert wake["at"] == clock() + 43_200 and wake["move_pct"] == 2.0           # il n'a rien demandé : défauts du code
+    clock.advance(3_600)
+    assert agent.decide(priced(clock(), btc=60_000.0)).skipped                  # plus d'appel toutes les heures
+    clock.advance(3_600)
+    assert agent.decide(priced(clock(), btc=61_199.0)).skipped                  # +1,998 % : pas un évènement
+    assert not agent.decide(priced(clock(), btc=61_200.0)).skipped              # +2 % : appelé
+    clock.advance(43_199)
+    assert agent.decide(priced(clock(), btc=61_200.0)).skipped
+    clock.advance(1)
+    assert not agent.decide(priced(clock(), btc=61_200.0)).skipped              # 12 h de calme : appelé
+    assert len(client.calls) == 3
+
+
+def test_l_agent_peut_changer_les_defauts_dans_les_bornes():
+    from tradeagent.llm_agent import WAKE_KEY
+
+    agent, _, clock, storage, _ = make([sleepy(minutes=120), sleepy(move=5), sleepy(minutes=1, move=0.1)], **EVENTS)
+    agent.decide(priced(clock()))
+    assert storage.get(WAKE_KEY) == {"at": clock() + 7_200, "tier": "normal", "move_pct": 2.0,
+                                     "prices": {"BTC/EUR": 60_000.0, "ETH/EUR": 2_500.0}}
+    clock.advance(7_200)
+    agent.decide(priced(clock()))
+    wake = storage.get(WAKE_KEY)
+    assert wake["at"] == clock() + 43_200 and wake["move_pct"] == 5.0           # délai par défaut, seuil choisi
+    clock.advance(43_200)
+    agent.decide(priced(clock()))
+    wake = storage.get(WAKE_KEY)
+    assert wake["at"] == clock() + 3_600 and wake["move_pct"] == 0.5            # bornes : cadence minimale, seuil plancher
+
+
+def test_les_defauts_respectent_le_palier_economie_et_la_position():
+    from tradeagent.llm_agent import WAKE_KEY
+
+    agent, _, clock, storage, _ = make([reply(HOLD)], quiet_call_interval_seconds=3_600, wake_move_pct=5.0)
+    agent.decide(priced(clock(), tier="cautious", positions=HELD))
+    wake = storage.get(WAKE_KEY)
+    assert wake["at"] == clock() + 7_200                                        # jamais sous l'intervalle minimal du palier
+    assert wake["move_pct"] == 3.0                                              # position détenue : seuil imposé, plus serré
+
+    agent, client, clock, storage, _ = make([reply(HOLD)], **EVENTS)
+    agent.decide(priced(clock()))
+    data_user = client.calls[0][1]
+    data = json.loads(data_user.split("\n", 1)[1])
+    assert data["call_interval_minutes"] == {"min": 60, "max": 1440, "default": 720, "default_wake_move_pct": 2.0,
+                                             "wake_move_pct_while_holding": 3.0}
+
+
+def test_les_cles_d_appels_sur_evenement_sont_validees():
+    from tradeagent.config import ConfigError, load_config
+
+    for bad in ({"quiet_call_interval_seconds": 1_800}, {"quiet_call_interval_seconds": 90_000},
+                {"wake_move_pct": 0.4}, {"wake_move_pct": 51}, {"wake_move_pct": "2"},
+                {"quiet_call_interval_seconds": float("nan")}):
+        with pytest.raises(ConfigError):
+            default_cfg(llm=bad)
+    assert default_cfg().llm.quiet_call_interval_seconds is None and default_cfg().llm.wake_move_pct is None
+    cfg = default_cfg(llm=EVENTS)
+    assert cfg.llm.quiet_call_interval_seconds == 43_200.0 and cfg.llm.wake_move_pct == 2.0
+
+
+def test_le_schema_de_reponse_couvre_la_decision_et_le_reveil():
+    from tradeagent.llm_agent import DECISION_SCHEMA
+    from tradeagent.models import Decision
+
+    assert DECISION_SCHEMA["additionalProperties"] is False
+    assert set(DECISION_SCHEMA["required"]) == set(DECISION_SCHEMA["properties"]) == {
+        "action", "symbol", "amount_quote", "reasoning", "next_check_minutes", "wake_if_move_pct"}
+    assert DECISION_SCHEMA["properties"]["action"]["enum"] == ["buy", "sell", "hold"]
+    # Une réponse conforme au schéma, avec ses null, reste lisible par le code existant.
+    text = '{"action":"hold","symbol":null,"amount_quote":null,"reasoning":"calme","next_check_minutes":null,"wake_if_move_pct":null}'
+    assert Decision.from_json(text).action == "hold"
+    buy = '{"action":"buy","symbol":"BTC/EUR","amount_quote":8,"reasoning":"x","next_check_minutes":240,"wake_if_move_pct":null}'
+    assert Decision.from_json(buy).amount_quote == 8.0
+    with pytest.raises(InvalidDecision):
+        Decision.from_json('{"action":"buy","symbol":null,"amount_quote":null,"reasoning":"x","next_check_minutes":null,"wake_if_move_pct":null}')
+
+
+def test_le_client_anthropic_envoie_le_schema_a_l_api_quand_on_lui_en_donne_un():
+    from types import SimpleNamespace
+
+    from tradeagent.llm import AnthropicClient
+    from tradeagent.llm_agent import DECISION_SCHEMA
+
+    seen = []
+
+    class Messages:
+        def create(self, **kwargs):
+            seen.append(kwargs)
+            usage = SimpleNamespace(input_tokens=10, output_tokens=5)
+            return SimpleNamespace(content=[SimpleNamespace(type="text", text=HOLD)], usage=usage)
+
+    fake = SimpleNamespace(messages=Messages())
+    AnthropicClient("m", client=fake, output_schema=DECISION_SCHEMA).complete("sys", "user", 400)
+    assert seen[0]["output_config"] == {"format": {"type": "json_schema", "schema": DECISION_SCHEMA}}
+    AnthropicClient("m", client=fake).complete("sys", "user", 400)
+    assert "output_config" not in seen[1]                                       # sans schéma : requête inchangée
+
+
+def test_le_bot_et_le_backtest_demandent_le_format_impose(monkeypatch):
+    from tradeagent import app, cli
+    from tradeagent.llm_agent import DECISION_SCHEMA
+
+    built = []
+    monkeypatch.setattr(app, "AnthropicClient", lambda model, **kwargs: built.append(kwargs) or object())
+    app.build_agent("llm", default_cfg(), Storage(":memory:"))
+    assert built == [{"output_schema": DECISION_SCHEMA}]
+    assert "output_schema=DECISION_SCHEMA" in open(cli.__file__, encoding="utf-8").read()

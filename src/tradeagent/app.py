@@ -12,7 +12,7 @@ from .feeds import CcxtPriceFeed, PriceFeed, SyntheticPriceFeed
 from .guardrails import Guardrails
 from .killswitch import KillSwitch
 from .llm import AnthropicClient, FakeLLMClient
-from .llm_agent import LLMAgent
+from .llm_agent import DECISION_SCHEMA, LLMAgent
 from .paper import PaperExchange
 from .storage import Storage
 
@@ -73,6 +73,7 @@ def build_agent(kind: str, cfg: Config, storage: Storage, seed: int | None = Non
     if kind == "chaos":
         return ChaosAgent(seed=seed)
     if kind in ("llm", "llm-fake"):
-        client = AnthropicClient(cfg.llm.model) if kind == "llm" else FakeLLMClient(seed=seed)
+        client = (AnthropicClient(cfg.llm.model, output_schema=DECISION_SCHEMA) if kind == "llm"
+                  else FakeLLMClient(seed=seed))
         return LLMAgent(cfg, client, InferenceBudget(cfg.llm, storage, clock), storage, clock)
     raise ConfigError(f"agent inconnu : {kind!r} (choix : {', '.join(AGENT_KINDS)})")

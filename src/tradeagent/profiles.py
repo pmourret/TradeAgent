@@ -19,7 +19,7 @@ LIVE_REFUSAL = (
     "Avant de l'écrire, il faut :\n"
     "  1. une à deux semaines de paper trading où l'agent `llm` est comparé à la référence `hold` ;\n"
     "  2. la confirmation manuelle des ordres (file d'approbation) ;\n"
-    "  3. un adaptateur d'exchange authentifié, testé sur testnet, avec un sous-compte dédié et des clés\n"
+    "  3. un adaptateur d'exchange authentifié, testé contre un faux exchange local, avec un sous-compte dédié et des clés\n"
     "     SANS droit de retrait.\n"
     "En attendant, le profil `llm` fait tout le travail avec de l'argent fictif (mais l'API, elle, est facturée)."
 )

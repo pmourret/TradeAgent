@@ -38,7 +38,7 @@ Pour essayer tout de suite, sans clé ni réseau : `scripts/start.sh demo`. Pour
 
 ### Le mode réel n'existe pas encore
 
-`scripts/live.sh` (ou `tradeagent run --profile live`) refuse, volontairement : le code ne sait pas passer d'ordre sur un vrai compte, et `config.yaml` rejette `mode: live`. Ce n'est pas un oubli, c'est la dernière étape du plan (voir « Chemin vers l'argent réel ») : confirmation manuelle des ordres, adaptateur d'exchange authentifié testé sur testnet, sous-compte dédié, clés sans droit de retrait.
+`scripts/live.sh` (ou `tradeagent run --profile live`) refuse, volontairement : le code ne sait pas passer d'ordre sur un vrai compte, et `config.yaml` rejette `mode: live`. Ce n'est pas un oubli, c'est la dernière étape du plan (voir « Chemin vers l'argent réel ») : confirmation manuelle des ordres, adaptateur d'exchange authentifié testé contre un faux exchange local, sous-compte dédié, clés sans droit de retrait.
 
 ## Utilisation
 
@@ -189,5 +189,5 @@ Ce projet ne recommande aucune plateforme et ne donne aucun conseil financier ou
 
 1. **Paper sur ta machine, ~1 semaine** : `scripts/start.sh hold llm` lance la référence et le LLM côte à côte (bases séparées), `scripts/status.sh` les compare. Mesurer le vrai coût API.
 2. **Quarantaine** : chaque ordre réel attend ta confirmation (file d'approbation en base, asynchrone pour ne pas bloquer les contrôles du kill switch).
-3. **Adaptateur exchange réel** : testnet d'abord ; puis sous-compte dédié, clés API **sans droit de retrait**, restreintes à ton IP.
+3. **Adaptateur exchange réel** : l'exchange visé n'offre pas d'environnement de test au comptant, donc l'adaptateur est d'abord testé contre un faux exchange local (timeouts, exécutions partielles, rejets) ; puis sous-compte dédié, clés API limitées à la lecture et au trading, **sans droit de retrait ni de transfert**, restreintes à ton IP ; premiers ordres au minimum (5 €).
 4. **Mise réelle** : 50 € maximum, uniquement de l'argent que tu acceptes de perdre en totalité.

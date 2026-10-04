@@ -14,6 +14,17 @@ def test_shipped_config_loads():
     assert cfg.guardrails.max_order_pct == 20
 
 
+def test_shipped_config_targets_the_exchange_and_its_taker_fee():
+    cfg = load_config(SHIPPED)
+    assert cfg.exchange == "bitvavo"
+    assert 0 < cfg.costs.fee_rate < 0.01
+
+
+def test_default_exchange_matches_the_shipped_one_and_any_ccxt_id_is_still_accepted():
+    assert config_from_dict({}).exchange == load_config(SHIPPED).exchange
+    assert config_from_dict({"exchange": "kraken"}).exchange == "kraken"
+
+
 def test_empty_config_uses_defaults():
     assert config_from_dict({}).stake == 100.0
 

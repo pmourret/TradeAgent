@@ -3,7 +3,10 @@
 # jamais désactiver un garde-fou en silence.
 
 mode: paper            # seul "paper" est implémenté pour l'instant
-exchange: binance      # prix publics via ccxt : aucune clé API nécessaire en paper
+# Identifiant ccxt de l'exchange dont on lit les prix publics : aucune clé API nécessaire en paper.
+# C'est celui visé pour le réel, afin que prix, paires et frais du paper lui ressemblent.
+# Binance n'est plus utilisable par les résidents français depuis le 01/07/2026 (pas d'agrément MiCA).
+exchange: bitvavo
 quote_currency: EUR
 symbols: [BTC/EUR, ETH/EUR]
 stake: 50.0            # la mise de départ (fictive en paper) ; changer sans `reset` est refusé
@@ -11,7 +14,10 @@ cycle_seconds: 900     # une décision toutes les 15 minutes
 database: data/agent.db
 
 costs:
-  fee_rate: 0.001      # 0,1 % par ordre
+  # 0,25 % par ordre : frais taker du premier palier (volume 30 jours à partir de 0 €), marchés en EUR.
+  # Le bot ne passe que des ordres au marché, donc il paie toujours le taker, jamais le maker.
+  # Source : https://bitvavo.com/en/fees, relevé le 04/10/2026. À revoir si l'exchange ou sa grille change.
+  fee_rate: 0.0025
   slippage_bps: 5      # 0,05 % de glissement par ordre
 
 # Garde-fous : appliqués en code entre l'agent et l'exchange.

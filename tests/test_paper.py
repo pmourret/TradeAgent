@@ -30,6 +30,13 @@ def test_buy_moves_balances_and_charges_costs():
     assert b["EUR"] == pytest.approx(100 - cost - fill.fee)
 
 
+def test_the_fee_charged_is_the_one_from_the_config():
+    ex, *_ = make(fee=0.0025, slip=0)
+    fill = ex.market_order("BTC/EUR", "buy", 0.0002)
+    assert fill.fee == pytest.approx(0.0002 * 60_000 * 0.0025)
+    assert ex.get_balances()["EUR"] == pytest.approx(100 - 12 - 0.03)
+
+
 def test_round_trip_at_constant_price_loses_exactly_the_costs():
     ex, *_ = make()
     ex.market_order("BTC/EUR", "buy", 0.0003)

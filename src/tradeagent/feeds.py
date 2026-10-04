@@ -39,7 +39,7 @@ def _candle_from_row(symbol: str, row: Any) -> Candle:
 class CcxtPriceFeed:
     """Prix publics d'un exchange via ccxt. Aucune clé API, lecture seule."""
 
-    def __init__(self, exchange_id: str = "binance", client: Any = None) -> None:
+    def __init__(self, exchange_id: str = "bitvavo", client: Any = None) -> None:
         if client is None:
             import ccxt
 

@@ -169,7 +169,7 @@ class LLMConfig:
 @dataclass(frozen=True)
 class Config:
     mode: str = "paper"
-    exchange: str = "binance"
+    exchange: str = "bitvavo"
     quote_currency: str = "EUR"
     symbols: tuple[str, ...] = ("BTC/EUR", "ETH/EUR")
     stake: float = 100.0

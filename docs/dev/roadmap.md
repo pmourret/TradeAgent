@@ -16,7 +16,8 @@ Code dans `desktop/` (Node/Electron), sans toucher au moteur. Chaque phase est l
 ### Étape 0 — Valider en vrai (Pierre, sur son PC ; aucun code, ~1 semaine)
 1. `scripts/paper.sh hold --max-cycles 1` passe (prix réels). Sinon : corriger `CcxtPriceFeed`. — *passé le 2026-10-04 sur Bitvavo.*
 2. `scripts/paper.sh llm --max-cycles 1` passe ; mesurer le coût réel d'un appel (attendu ≈ 0,002 €).
-3. `scripts/start.sh hold llm` pendant 7 jours sans `halted` inexpliqué ; comparer avec `status --all`.
+3. **Juste avant le test de 7 jours** (décision de Pierre, 2026-10-04) : chantier de réduction de la consommation de tokens du bot lui-même (taille du prompt, cache de prompt, cadence des appels ; voir B3). Mesurer le coût réel d'un appel avant et après.
+4. `scripts/start.sh hold llm` pendant 7 jours sans `halted` inexpliqué ; comparer avec `status --all`.
 
 ### Étape 1 — Prérequis de l'argent réel (dans cet ordre, seulement après l'étape 0)
 - **a. Quarantaine** : le moteur n'appelle plus `market_order` directement ; il enregistre l'ordre validé par les garde-fous (table `pending_orders` : id, ts, symbole, sens, quantité, prix de référence, expiration, statut). Confirmation en **CLI** (`tradeagent orders / approve / reject`, à créer) ; une approbation depuis l'UI serait une décision à prendre avec Pierre, pas par défaut. Expiration (~10 min) et refus si le prix a trop bougé ; l'approbation rejoue les garde-fous avec l'état du moment ; la liquidation de mort n'y passe pas.

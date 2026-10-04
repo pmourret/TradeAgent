@@ -11,7 +11,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from .app import AGENT_KINDS, build_agent, build_engine, build_feed, reset_life
-from .backtest import BACKTEST_AGENTS, DEFAULT_AGENTS, compare, format_table, market_return_pct, warmup_seconds
+from .backtest import (BACKTEST_AGENTS, DEFAULT_AGENTS, compare, format_table, market_return_pct, run_backtest,
+                       warmup_seconds)
 from .budget import InferenceBudget, day_start_ts
 from .config import ConfigError, load_config
 from .envfile import load_env_file
@@ -20,7 +21,8 @@ from .models import TIMEFRAME_SECONDS
 from .replay import load_history, public_client, synthetic_history
 from .killswitch import KillSwitch, KillSwitchError
 from .launcher import build_jobs, describe, preflight, resolve_profiles, run_jobs
-from .llm import LLMError, require_api_key
+from .llm import AnthropicClient, LLMError, require_api_key
+from .llm_cache import CachingLLMClient, EstimatingClient, ReplyCache
 from .lock import InstanceLock
 from .profiles import LIVE, PROFILES, apply_profile, get_profile
 from .stopper import StdinStop
@@ -80,6 +82,9 @@ def _parser() -> argparse.ArgumentParser:
     backtest.add_argument("--seed", type=int, default=1, help="graine des agents aléatoires et de l'historique synthétique")
     backtest.add_argument("--synthetic", action="store_true",
                           help="historique fabriqué (marche aléatoire), sans réseau : pour essayer la commande")
+    backtest.add_argument("--max-api-eur", type=float, default=None, metavar="EUR",
+                          help="obligatoire avec l'agent llm : dépense RÉELLE maximale d'API pour ce backtest")
+    backtest.add_argument("--yes", action="store_true", help="avec l'agent llm : ne demande pas de confirmation")
     backtest.add_argument("--refresh", action="store_true", help="retélécharge l'historique au lieu d'utiliser le cache")
     return parser
 
@@ -251,18 +256,72 @@ def cmd_web(args: argparse.Namespace) -> int:
     return 0
 
 
+def _llm_cache_path(cfg) -> Path:
+    return Path(cfg.database).parent / "llm-cache" / "backtest.jsonl"
+
+
+def _lock_llm_cache(cfg) -> InstanceLock:
+    """Un seul backtest payant à la fois : deux lancements liraient le même cumul et dépasseraient le plafond."""
+    try:
+        return InstanceLock(_llm_cache_path(cfg)).acquire()
+    except ConfigError:
+        raise ConfigError("un autre backtest avec le vrai LLM est déjà en cours : attends qu'il finisse "
+                          "(deux à la fois dépasseraient le plafond de dépense).") from None
+
+
+def _backtest_llm_client(cfg, args: argparse.Namespace, history, start: float, end: float) -> CachingLLMClient | None:
+    """Prépare le vrai LLM pour un backtest : estimation à blanc, puis confirmation. None = refusé, rien dépensé."""
+    cost_of = InferenceBudget(cfg.llm, Storage(":memory:")).cost_eur
+    cache = ReplyCache(_llm_cache_path(cfg))
+    estimate = EstimatingClient(cache, cfg.llm.model, cost_of)
+    run_backtest(cfg, "llm", history, start, end, seed=args.seed, llm_client=estimate)
+
+    to_pay = estimate.calls - estimate.cached
+    print(f"vrai LLM ({cfg.llm.model}) : environ {estimate.calls} appels sur la période, dont {estimate.cached} déjà en cache.")
+    print(f"  à payer pour de vrai : environ {estimate.typical_cost:.2f} € (au pire {estimate.worst_cost:.2f} €) ; "
+          f"plafond de ce backtest : {args.max_api_eur:.2f} €")
+    print(f"  déjà payé par les backtests précédents : {cache.spent_lifetime:.2f} € sur {cfg.llm.total_budget_eur:.2f} € "
+          "(llm.total_budget_eur)")
+    print("  C'est une estimation : le nombre d'appels et leur taille changent avec les décisions du LLM. "
+          "Le plafond, lui, est appliqué par le code avant chaque appel.")
+    if estimate.typical_cost > args.max_api_eur:
+        raise ConfigError("l'estimation dépasse le plafond : le backtest s'arrêterait en route. "
+                          "Raccourcis la période (--days) ou relève --max-api-eur.")
+    if cache.spent_lifetime + estimate.typical_cost > cfg.llm.total_budget_eur:
+        raise ConfigError("l'estimation dépasse ce qu'il reste du plafond cumulé des backtests (llm.total_budget_eur) : "
+                          "le backtest s'arrêterait en route. Raccourcis la période (--days).")
+    if to_pay > 0:
+        require_api_key()
+        if not args.yes:
+            try:
+                answer = input("Tape « oui » pour lancer ce backtest payant : ")
+            except EOFError:
+                answer = ""
+            if answer.strip().lower() != "oui":
+                print("abandonné : rien n'a été dépensé.")
+                return None
+    return CachingLLMClient(lambda: AnthropicClient(cfg.llm.model), cache, cfg.llm.model, cost_of,
+                            run_cap_eur=args.max_api_eur, total_cap_eur=cfg.llm.total_budget_eur)
+
+
 def cmd_backtest(args: argparse.Namespace) -> int:
     cfg = load_config(args.config)
     agents = [a.strip() for a in args.agents.split(",") if a.strip()]
-    if "llm" in agents:
-        raise ConfigError("le vrai LLM n'est pas disponible en backtest : chaque rejeu coûterait de l'argent réel. "
-                          "Utilise llm-fake pour vérifier la chaîne, sans dépense.")
+    real_llm = "llm" in agents
+    if real_llm:
+        if args.max_api_eur is None:
+            raise ConfigError("le vrai LLM en backtest coûte de l'argent réel : donne un plafond de dépense, "
+                              "par exemple --max-api-eur 0.50. Sans dépense : --agents llm-fake.")
+        if not 0 < args.max_api_eur <= cfg.llm.total_budget_eur:
+            raise ConfigError(f"--max-api-eur doit être supérieur à 0 et au plus égal à llm.total_budget_eur "
+                              f"({cfg.llm.total_budget_eur:g} €)")
     unknown = [a for a in agents if a not in BACKTEST_AGENTS]
     if unknown or not agents:
         raise ConfigError(f"agents de backtest inconnus : {', '.join(unknown) or '(aucun)'} "
                           f"(choix : {', '.join(BACKTEST_AGENTS)})")
     if args.days < 1:
         raise ConfigError("--days doit valoir au moins 1")
+    llm_client = None
     step = TIMEFRAME_SECONDS[cfg.market.timeframe]
     if args.end:
         try:
@@ -289,10 +348,16 @@ def cmd_backtest(args: argparse.Namespace) -> int:
         logger = logging.getLogger("tradeagent")
         previous_level = logger.level
         logger.setLevel(logging.CRITICAL)        # des milliers de cycles : pas de journal par cycle
+        lock = _lock_llm_cache(cfg) if real_llm else None     # gardé de l'estimation à la fin du backtest
         try:
-            results = compare(cfg, agents, history, start, end, seed=args.seed)
+            llm_client = _backtest_llm_client(cfg, args, history, start, end) if real_llm else None
+            if real_llm and llm_client is None:
+                return 1                         # refusé à la confirmation : rien n'a été dépensé
+            results = compare(cfg, agents, history, start, end, seed=args.seed, llm_client=llm_client)
         finally:
             logger.setLevel(previous_level)
+            if lock is not None:
+                lock.release()
         market_pct = market_return_pct(cfg, history, start, end)
     except ExchangeError as exc:
         print(f"erreur de données : {exc}", file=sys.stderr)
@@ -303,6 +368,10 @@ def cmd_backtest(args: argparse.Namespace) -> int:
     print(f"mise {cfg.stake:g} {cfg.quote_currency}, un cycle toutes les {cfg.cycle_seconds / 60:g} min, "
           f"frais {cfg.costs.fee_rate * 100:g} % + glissement {cfg.costs.slippage_bps:g} pb par ordre\n")
     print(format_table(results, cfg, market_pct))
+    if llm_client is not None:
+        failed = (f", {llm_client.failed_calls} appels ratés comptés au pire coût" if llm_client.failed_calls else "")
+        print(f"vrai LLM : {llm_client.paid_calls} appels payés ({llm_client.spent_run:.4f} € réels, plafond "
+              f"{args.max_api_eur:.2f} €), {llm_client.hits} réponses relues du cache{failed}")
     print("\nÀ lire avec prudence : les ordres sont exécutés au dernier prix de clôture (optimiste), le prix ne bouge pas "
           "entre deux bougies (le kill switch et le drawdown ne voient donc que les clôtures), et une période passée ne dit rien de la suivante. Ce n'est pas un conseil de placement.")
     return 0

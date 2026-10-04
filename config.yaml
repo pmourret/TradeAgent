@@ -60,4 +60,5 @@ llm:
   price_output_per_mtok_usd: 5.0
   usd_to_eur: 0.90                 # approximatif et volontairement pessimiste ; à ajuster
   daily_budget_eur: 0.25           # plafond de dépense API par jour (UTC)
-  total_budget_eur: 10.0           # plafond total sur toute l'expérience, toutes vies confondues
+  total_budget_eur: 10.0           # plafond total du bot sur toute l'expérience, toutes vies confondues ;
+                                   # les backtests avec le vrai LLM ont une enveloppe à part, du même montant

@@ -157,7 +157,7 @@ Les protections de l'interface web restent en place, et la fenêtre en ajoute : 
 
 ## Backtest : rejouer une période passée
 
-Avant de comparer des agents sur des semaines de paper trading, on peut les faire tourner sur le passé. C'est gratuit (prix publics, aucune clé, aucun appel au LLM) et ça prend quelques secondes :
+Avant de comparer des agents sur des semaines de paper trading, on peut les faire tourner sur le passé. Par défaut c'est gratuit (prix publics, aucune clé, aucun appel au LLM) et ça prend quelques secondes :
 
 ```bash
 tradeagent backtest                      # 30 derniers jours, bougies de l'exchange de config.yaml
@@ -189,7 +189,35 @@ Colonnes : `net` = equity finale − mise − coûts d'API ; `drawdown` = la plu
 
 Garanties du code, testées : à un instant simulé, un agent ne voit jamais une bougie encore en cours (pas de vue sur le futur) ; un historique incomplet (début ou fin manquants, trou de plus de 6 bougies) est refusé avec la date du trou, au lieu de donner un backtest plus court que la période affichée ; un agent arrêté en route (`dead`, `halted`) est signalé sous le tableau avec sa raison, sa ligne ne se compare pas aux autres.
 
-Le vrai LLM n'est pas disponible en backtest : le rejouer coûterait de l'argent réel à chaque essai. C'est l'étape suivante (cache des réponses et plafond de dépense dédié).
+### Le vrai LLM en backtest (payant)
+
+```bash
+tradeagent backtest --agents hold,buyhold,llm --days 7 --max-api-eur 0.50
+```
+
+Ici chaque appel au LLM coûte de l'**argent réel**, et le budget de `config.yaml` ne suffit pas à protéger : un backtest part d'une base vide, ses compteurs repartent donc de zéro à chaque lancement. D'où des protections propres au backtest, appliquées par le code :
+
+- `--max-api-eur` est **obligatoire** avec l'agent `llm` : c'est la dépense réelle maximale de ce backtest. Il ne peut pas dépasser `llm.total_budget_eur` ;
+- avant de lancer, une répétition à blanc (sans aucun appel) affiche le nombre d'appels prévus, ce qui est déjà en cache et le coût estimé ; si l'estimation dépasse le plafond, le backtest refuse de démarrer ;
+- il faut ensuite taper `oui` (ou passer `--yes`). Sans terminal, c'est un refus ;
+- avant **chaque** appel, le code vérifie deux plafonds avec une estimation pessimiste du coût de l'appel : celui du backtest en cours, et celui de **tous les backtests cumulés** (`llm.total_budget_eur`, d'après ce qui a déjà été payé). Plafond atteint : l'agent `llm` s'arrête (`halted`), c'est signalé sous le tableau ;
+- le coût pessimiste de chaque appel est **réservé** dans le fichier de cache avant l'appel, puis remplacé par le coût réel à la réponse. Un appel raté, un arrêt brutal ou un disque plein laissent donc la réservation comptée (on suppose l'appel facturé) : la comptabilité se trompe toujours du côté prudent. Si le fichier ne peut pas être écrit, aucun appel payant ne part ;
+- trois appels ratés d'affilée, et le backtest n'essaie plus ;
+- un seul backtest payant à la fois (verrou) : deux en parallèle liraient le même cumul et dépasseraient le plafond.
+
+Les réponses payées sont gardées dans `data/llm-cache/backtest.jsonl` : relancer le même backtest ne coûte rien, ne demande ni clé ni confirmation, et donne le même résultat (le LLM n'est pas déterministe, le cache si). Le coût d'API d'une réponse relue du cache reste compté dans le résultat net, comme s'il avait été payé : le but est de comparer net de l'API. Le fichier ne contient ni prompt ni clé. **Ne le supprime pas** : c'est aussi le registre de ce que les backtests ont réellement dépensé ; l'effacer fait repayer les appels et remet le cumul à zéro.
+
+Dans le tableau, la colonne `API` est le coût d'API de la période simulée ; la dépense réelle de ce lancement est sur la ligne « vrai LLM » en dessous. L'estimation n'est pas un devis : le nombre d'appels et leur taille changent avec les décisions du LLM. Seuls les plafonds sont des garanties.
+
+Limites à connaître :
+
+- **les backtests ont leur propre enveloppe**, égale à `llm.total_budget_eur`, comptée à part de celle du bot. La dépense réelle totale possible est donc de deux fois ce montant (bot + backtests) ;
+- il n'y a pas de plafond par jour réel en backtest : `daily_budget_eur` ne joue qu'en temps simulé. `--max-api-eur` peut être dépensé en quelques minutes ;
+- les plafonds sont calculés aux prix écrits dans `config.yaml` (`price_*_per_mtok_usd`, `usd_to_eur`) : s'ils sont faux, la dépense réelle l'est dans le même rapport ;
+- le cache suit une trajectoire : si un appel échoue en route, les prompts suivants changent (le budget restant y figure) et la relance repaie la suite. « Ne pas payer deux fois » vaut pour un backtest allé au bout ;
+- les appels s'enchaînent sans attente : sur une longue période, l'API peut refuser pour excès de débit, ce qui arrête l'agent après trois échecs.
+
+`llm-fake` reste là pour vérifier la chaîne sans rien dépenser.
 
 ## Comment l'agent est tenu
 

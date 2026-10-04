@@ -115,7 +115,7 @@ def test_le_vrai_llm_est_refuse_et_un_agent_inconnu_aussi():
         run_backtest(cfg, "martingale", history, T0, T0 + DAY)
     with pytest.raises(ConfigError, match="vide"):
         run_backtest(cfg, "hold", history, T0, T0)
-    assert "llm" not in BACKTEST_AGENTS and set(DEFAULT_AGENTS) <= set(BACKTEST_AGENTS)
+    assert "llm" not in DEFAULT_AGENTS and set(DEFAULT_AGENTS) <= set(BACKTEST_AGENTS)      # jamais payant par défaut
 
 
 def test_le_meme_backtest_donne_deux_fois_le_meme_resultat():

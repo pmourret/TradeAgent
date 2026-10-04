@@ -231,7 +231,7 @@ def test_le_prompt_donne_les_vrais_frais_le_loyer_et_les_bornes_de_reveil():
     assert "usually the right one" not in system and "counts as failure" in system
     assert "api_safety_caps_left" in system and "api_cost_per_call" in system
     assert "next_check_minutes" in system and "wake_if_move_pct" in system
-    assert storage.get(PROMPT_VERSION_KEY) == PROMPT_VERSION == 5
+    assert storage.get(PROMPT_VERSION_KEY) == PROMPT_VERSION == 6
 
 
 def test_les_cles_de_reveil_sont_lues_avec_prudence():
@@ -733,3 +733,42 @@ def test_le_bot_et_le_backtest_demandent_le_format_impose(monkeypatch):
     app.build_agent("llm", default_cfg(), Storage(":memory:"))
     assert built == [{"output_schema": DECISION_SCHEMA}]
     assert "output_schema=DECISION_SCHEMA" in open(cli.__file__, encoding="utf-8").read()
+
+
+# -- positions détaillées : prix de revient, gain ou perte latente, âge ------------------------------------------
+
+def test_le_prix_de_revient_suit_les_achats_et_les_ventes():
+    from tradeagent.llm_agent import position_stats
+
+    def fill(ts, side, qty, price, fee=0.0, symbol="BTC/EUR"):
+        return {"ts": ts, "symbol": symbol, "side": side, "quantity": qty, "price": price, "fee": fee}
+
+    assert position_stats([]) == {}
+    one = position_stats([fill(10, "buy", 2.0, 100.0, fee=1.0)])
+    assert one == {"BTC/EUR": {"entry_price": 100.5, "opened": 10}}             # les frais d'achat entrent dans le prix de revient
+    two = position_stats([fill(10, "buy", 1.0, 100.0), fill(20, "buy", 1.0, 200.0)])
+    assert two["BTC/EUR"] == {"entry_price": 150.0, "opened": 10}               # moyenne pondérée, date du premier achat
+    partial = position_stats([fill(10, "buy", 2.0, 100.0), fill(20, "sell", 1.0, 500.0)])
+    assert partial["BTC/EUR"]["entry_price"] == 100.0                           # une vente ne change pas le prix de revient
+    closed = position_stats([fill(10, "buy", 2.0, 100.0), fill(20, "sell", 2.0, 90.0)])
+    assert closed == {}
+    reopened = position_stats([fill(10, "buy", 2.0, 100.0), fill(20, "sell", 2.0, 90.0), fill(30, "buy", 1.0, 80.0)])
+    assert reopened == {"BTC/EUR": {"entry_price": 80.0, "opened": 30}}         # position rouverte : on repart de zéro
+    both = position_stats([fill(10, "buy", 1.0, 100.0), fill(11, "buy", 4.0, 25.0, symbol="ETH/EUR")])
+    assert both["ETH/EUR"]["entry_price"] == 25.0 and both["BTC/EUR"]["entry_price"] == 100.0
+
+
+def test_le_prompt_montre_le_gain_latent_et_l_age_de_chaque_position():
+    from tradeagent.models import Fill
+
+    agent, client, clock, storage, _ = make([reply(HOLD)])
+    storage.set("life", {"stake": 50.0, "started": START - 10_000})
+    storage.record_fill(Fill("BTC/EUR", "buy", 0.5, 50_000.0, 0.0, START - 20_000), source="llm")   # vie précédente
+    storage.record_fill(Fill("BTC/EUR", "buy", 0.001, 66_000.0, 0.0, START - 7_200), source="llm")
+    agent.decide(priced(clock(), btc=60_000.0, positions=HELD))
+    data = json.loads(client.calls[0][1].split("\n", 1)[1])
+    assert data["positions"]["BTC/EUR"] == {"qty": 0.001, "value": 60.0, "entry_price": 66000.0,
+                                            "pnl_pct": -9.09, "held_hours": 2}
+    assert data["positions"]["ETH/EUR"] == {"qty": 0.0, "value": 0.0}           # pas de position : rien de plus
+    system = client.calls[0][0]
+    assert "trend_vs_sma_pct" in system and "pnl_pct" in system and "not on getting back to your entry price" in system

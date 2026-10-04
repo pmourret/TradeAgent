@@ -293,13 +293,13 @@ def test_la_commande_applique_le_plafond_cumule_de_la_config(workdir, monkeypatc
     cache.parent.mkdir(parents=True)
     usage = {"input_tokens": 1, "output_tokens": 1, "cache_read_tokens": 0, "cache_write_tokens": 0}
     row = {"call": "1", "key": "ancien", "ts": 1, "model": "m", "text": HOLD, "usage": usage}
-    cache.write_text(json.dumps({**row, "cost_eur": 9.95}) + "\n", encoding="utf-8")
+    cache.write_text(json.dumps({**row, "cost_eur": 9.94}) + "\n", encoding="utf-8")
     inner = Inner(input_tokens=5_000)                                       # environ 0.0047 EUR pièce
     monkeypatch.setattr(cli, "AnthropicClient", lambda model, **kwargs: inner)
     assert cli.main([*ARGS, "--max-api-eur", "0.50", "--yes"]) == 0
     out = capsys.readouterr().out
     assert 1 <= inner.calls < 24                                            # arrêté par llm.total_budget_eur (10 EUR)
-    assert "déjà payé par les backtests précédents : 9.95 € sur 10.00 €" in out
+    assert "déjà payé par les backtests précédents : 9.94 € sur 10.00 €" in out
     assert "plafond de dépense réelle de tous les backtests" in out
     assert ReplyCache(cache).spent_lifetime <= 10.0
 

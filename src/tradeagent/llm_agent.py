@@ -34,7 +34,7 @@ LAST_CALL_KEY = "llm_last_call"
 WAKE_KEY = "llm_wake"                 # le réveil choisi par l'agent à son dernier appel
 IDLE_KEY = "llm_idle"                 # {since, cause} : l'agent n'est plus appelé faute d'ordre possible
 PROMPT_VERSION_KEY = "llm_prompt_version"
-PROMPT_VERSION = 5                    # à incrémenter à chaque changement de SYSTEM_PROMPT ou des données envoyées
+PROMPT_VERSION = 6                    # à incrémenter à chaque changement de SYSTEM_PROMPT ou des données envoyées
 MIN_WAKE_MOVE_PCT, MAX_WAKE_MOVE_PCT = 0.5, 50.0
 
 SYSTEM_PROMPT = """You manage a very small spot crypto portfolio (the quote currency is given in the data). \
@@ -53,6 +53,14 @@ daily limits). That layer judges your equity NET of everything you have spent on
 and shuts you down for good if that net equity falls too far. The data lists the current limits. \
 "api_safety_caps_left" are spending caps set by your operator, not money you own or must preserve: reaching one only \
 pauses you. What you must protect and grow is net_equity.
+
+Market data per symbol, all computed for you: "change_pct" (1h, 6h, 24h) and "change_long_pct" (7d, 30d); \
+"trend_vs_sma_pct" = how far the last price is above (+) or below (-) its average over 24h, 7d and 30d; "rsi" on hourly \
+and daily candles (0-100: above 70 it has run up a lot, below 30 it has fallen a lot); "atr_pct" = the usual size of \
+one candle, in percent: a smaller move is noise; "range" = high, low and where the price sits in its 7d and 30d range \
+("pos_pct": 0 = at the low, 100 = at the high). Read the longer horizons first: a one-hour pop inside a falling trend \
+is not a trend. Each position you hold shows "entry_price", "pnl_pct" and "held_hours". Judge a position on where the \
+market is heading, not on getting back to your entry price: selling a loser is a valid, often correct decision.
 
 risk_tier in the data: "normal" = standard limits; "cautious" = your net equity is down from its peak (trading losses \
 or your own running cost), limits are reduced and you are called less often; "defensive" = buys are blocked, only sells \
@@ -93,6 +101,24 @@ DECISION_SCHEMA: dict[str, Any] = {
     "required": ["action", "symbol", "amount_quote", "reasoning", "next_check_minutes", "wake_if_move_pct"],
     "additionalProperties": False,
 }
+
+
+def position_stats(fills: list[dict[str, Any]]) -> dict[str, dict[str, float]]:
+    """Prix de revient et date d'ouverture de chaque position, d'après les exécutions de la vie (de la plus ancienne
+    à la plus récente). Le prix de revient inclut les frais d'achat ; une vente réduit la position au prorata."""
+    book: dict[str, dict[str, float]] = {}
+    for fill in fills:
+        entry = book.setdefault(fill["symbol"], {"qty": 0.0, "cost": 0.0, "opened": fill["ts"]})
+        if fill["side"] == "buy":
+            if entry["qty"] <= 1e-12:
+                entry.update(qty=0.0, cost=0.0, opened=fill["ts"])
+            entry["qty"] += fill["quantity"]
+            entry["cost"] += fill["quantity"] * fill["price"] + fill["fee"]
+        elif entry["qty"] > 1e-12:
+            kept = max(0.0, 1.0 - fill["quantity"] / entry["qty"])
+            entry["qty"] *= kept
+            entry["cost"] *= kept
+    return {s: {"entry_price": e["cost"] / e["qty"], "opened": e["opened"]} for s, e in book.items() if e["qty"] > 1e-12}
 
 
 def _number(value: Any) -> float | None:
@@ -211,6 +237,20 @@ class LLMAgent:
     def _rent(self) -> float:
         return self._storage.llm_spend_since(self._life_start())
 
+    def _positions(self, view: MarketView) -> dict[str, dict[str, Any]]:
+        """Chaque position avec, quand elle est ouverte, son prix de revient, son gain ou sa perte latente et son âge."""
+        stats = position_stats(self._storage.fills_since(self._life_start()))
+        out: dict[str, dict[str, Any]] = {}
+        for symbol, p in view.positions.items():
+            row: dict[str, Any] = {"qty": p["quantity"], "value": p["value"]}
+            known = stats.get(symbol)
+            if known and p["quantity"] > 0 and known["entry_price"] > 0:
+                row["entry_price"] = float(f"{known['entry_price']:.5g}")
+                row["pnl_pct"] = round((p["price"] / known["entry_price"] - 1) * 100, 2)
+                row["held_hours"] = round((view.timestamp - known["opened"]) / 3600)
+            out[symbol] = row
+        return out
+
     def build_user_prompt(self, view: MarketView) -> str:
         llm, costs = self._cfg.llm, self._cfg.costs
         rent = self._rent()
@@ -226,7 +266,7 @@ class LLMAgent:
             "net_equity": round(view.equity - rent, 2),
             "cash": view.cash,
             "risk_tier": view.risk_tier,
-            "positions": {s: {"qty": p["quantity"], "value": p["value"]} for s, p in view.positions.items()},
+            "positions": self._positions(view),
             "candle_timeframe": view.candle_timeframe,
             "market": view.market,
             "limits": view.limits,

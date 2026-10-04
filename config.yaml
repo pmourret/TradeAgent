@@ -50,7 +50,7 @@ risk_tiers:
 # Données de marché fournies à l'agent
 market:
   timeframe: 1h
-  candles: 48
+  candles: 744                     # 31 jours de bougies d'une heure : de quoi calculer tendance, fourchette et variation sur 7 et 30 jours
 
 # Agent LLM et son « loyer » : chaque appel coûte de l'argent réel.
 llm:

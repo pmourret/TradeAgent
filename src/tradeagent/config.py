@@ -127,8 +127,8 @@ class MarketConfig:
                 f"market.timeframe: {self.timeframe!r} inconnu, choix : {sorted(TIMEFRAME_SECONDS)}"
             )
         _set(self, "candles", _integer("market", "candles", self.candles, ge=24))
-        if self.candles > 500:
-            raise ConfigError("market.candles: 500 au maximum")
+        if self.candles > 1000:
+            raise ConfigError("market.candles: 1000 au maximum")
 
 
 @dataclass(frozen=True)

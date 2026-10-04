@@ -121,6 +121,10 @@ class Storage:
         )
         self._db.commit()
 
+    def fills_since(self, ts: float) -> list[dict[str, Any]]:
+        """Les exécutions depuis `ts`, de la plus ancienne à la plus récente."""
+        return self._rows("SELECT * FROM fills WHERE ts >= ? ORDER BY id", (ts,))
+
     def llm_calls_since(self, ts: float) -> int:
         return int(self._db.execute("SELECT COUNT(*) FROM llm_calls WHERE ts >= ?", (ts,)).fetchone()[0])
 

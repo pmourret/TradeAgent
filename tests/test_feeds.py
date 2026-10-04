@@ -36,8 +36,69 @@ def test_ccxt_feed_wraps_network_errors():
 
 
 def test_unknown_exchange_id():
-    with pytest.raises(FeedError):
+    with pytest.raises(FeedError, match="exchange ccxt inconnu"):
         CcxtPriceFeed("not_an_exchange")
+
+
+# -- paire absente de l'exchange -------------------------------------------------
+
+class BadSymbol(Exception):
+    """Même nom que l'exception de ccxt : le flux la reconnaît par son nom, sans importer ccxt."""
+
+
+class FakeMarkets:
+    def __init__(self, symbols=None, error=None):
+        self.error = error or BadSymbol("bitvavo does not have market symbol DOGE/EUR")
+        if symbols is not None:
+            self.symbols = symbols
+
+    def fetch_ticker(self, symbol):
+        raise self.error
+
+    def fetch_ohlcv(self, symbol, timeframe, limit=None):
+        raise self.error
+
+
+@pytest.mark.parametrize("call", [lambda f: f.get_quote("DOGE/EUR"), lambda f: f.get_candles("DOGE/EUR")])
+def test_missing_pair_names_the_pair_the_exchange_and_what_exists_instead(call):
+    feed = CcxtPriceFeed("bitvavo", client=FakeMarkets(["ETH/EUR", "BTC/USDT", "BTC/EUR", "ETH/BTC"]))
+    with pytest.raises(FeedError) as err:
+        call(feed)
+    text = str(err.value)
+    assert "DOGE/EUR" in text and "bitvavo" in text
+    assert "BTC/EUR, ETH/EUR" in text                        # même devise de cotation, triées
+    assert "BTC/USDT" not in text and "ETH/BTC" not in text
+    assert "a échoué" not in text                            # ce n'est pas une panne : inutile de réessayer
+
+
+def test_missing_pair_lists_at_most_ten_suggestions():
+    symbols = [f"C{i:02d}/EUR" for i in range(25)]
+    with pytest.raises(FeedError) as err:
+        CcxtPriceFeed("bitvavo", client=FakeMarkets(symbols)).get_quote("DOGE/EUR")
+    assert [s for s in symbols if s in str(err.value)] == symbols[:10]
+
+
+@pytest.mark.parametrize("symbols", [None, [], ["BTC/USDT"]])
+def test_missing_pair_without_any_alternative_says_so(symbols):
+    with pytest.raises(FeedError, match="Aucune paire en EUR") as err:
+        CcxtPriceFeed("bitvavo", client=FakeMarkets(symbols)).get_quote("DOGE/EUR")
+    assert "DOGE/EUR" in str(err.value) and "bitvavo" in str(err.value)
+
+
+def test_an_ordinary_error_is_not_mistaken_for_a_missing_pair():
+    feed = CcxtPriceFeed("bitvavo", client=FakeMarkets(["BTC/EUR"], error=ConnectionError("network down")))
+    with pytest.raises(FeedError) as err:
+        feed.get_quote("BTC/EUR")
+    assert str(err.value) == "fetch_ticker(BTC/EUR) a échoué : network down"
+    with pytest.raises(FeedError) as err:
+        feed.get_candles("BTC/EUR")
+    assert str(err.value) == "fetch_ohlcv(BTC/EUR, 1h) a échoué : network down"
+
+
+def test_the_real_ccxt_exception_has_the_name_the_feed_looks_for():
+    import ccxt
+
+    assert ccxt.BadSymbol.__name__ == "BadSymbol"
 
 
 def test_synthetic_feed_is_reproducible_and_positive():

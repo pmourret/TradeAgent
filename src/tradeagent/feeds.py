@@ -48,11 +48,24 @@ class CcxtPriceFeed:
             except AttributeError as exc:
                 raise FeedError(f"exchange ccxt inconnu : {exchange_id!r}") from exc
         self._client = client
+        self._exchange_id = exchange_id
+
+    def _bad_symbol(self, symbol: str) -> FeedError:
+        """La paire n'existe pas sur cet exchange : on dit laquelle, où, et ce qui existe à la place."""
+        quote = symbol.split("/")[-1]
+        known = getattr(self._client, "symbols", None) or []   # rempli par ccxt lors de l'appel qui vient d'échouer
+        same_quote = sorted(s for s in known if isinstance(s, str) and s.endswith("/" + quote))[:10]
+        hint = (f"Paires disponibles en {quote} : {', '.join(same_quote)}." if same_quote
+                else f"Aucune paire en {quote} connue sur cet exchange.")
+        return FeedError(f"la paire {symbol} n'existe pas sur l'exchange {self._exchange_id}. {hint} "
+                         "Corrige `symbols` ou `exchange` dans config.yaml.")
 
     def get_quote(self, symbol: str) -> Quote:
         try:
             ticker = self._client.fetch_ticker(symbol)
         except Exception as exc:  # ccxt lève une famille d'exceptions réseau/exchange
+            if type(exc).__name__ == "BadSymbol":   # comparaison par nom : pas d'import de ccxt avec un faux client
+                raise self._bad_symbol(symbol) from exc
             raise FeedError(f"fetch_ticker({symbol}) a échoué : {exc}") from exc
         price = ticker.get("last") or ticker.get("close")
         if not _is_number(price) or price <= 0:
@@ -66,6 +79,8 @@ class CcxtPriceFeed:
         try:
             rows = self._client.fetch_ohlcv(symbol, timeframe, limit=limit)
         except Exception as exc:
+            if type(exc).__name__ == "BadSymbol":
+                raise self._bad_symbol(symbol) from exc
             raise FeedError(f"fetch_ohlcv({symbol}, {timeframe}) a échoué : {exc}") from exc
         candles = sorted((_candle_from_row(symbol, r) for r in rows or []), key=lambda c: c.timestamp)
         if not candles:

@@ -13,6 +13,8 @@ const PROFILES_SNIPPET =
   "print(json.dumps([{'name': p.name, 'port': p.port, 'description': p.description, " +
   "'costs_money': p.costs_money} for p in PROFILES.values()]))";
 
+const MAX_SNAPSHOT_BYTES = 4 * 1024 * 1024;
+
 function venvPython(root, platform = process.platform) {
   return platform === "win32"
     ? path.join(root, ".venv", "Scripts", "python.exe")
@@ -79,6 +81,43 @@ function probe(port, timeoutMs = 1000) {
   });
 }
 
+// L'instantané en lecture seule d'un profil, ou null (serveur absent, étranger, réponse trop grosse ou illisible).
+function fetchSnapshot(port, timeoutMs = 3000) {
+  return new Promise((done) => {
+    // `timeout` de http.request ne borne que l'inactivité : ce délai-ci borne la lecture entière.
+    const deadline = setTimeout(() => req.destroy(), timeoutMs);
+    const resolve = (value) => { clearTimeout(deadline); done(value); };
+    const req = http.request(
+      { host: "127.0.0.1", port, path: "/api/snapshot", method: "GET", timeout: timeoutMs },
+      (res) => {
+        if (res.statusCode !== 200 || !String(res.headers.server || "").startsWith("tradeagent")) {
+          res.resume();
+          resolve(null);
+          return;
+        }
+        const chunks = [];
+        let size = 0;
+        res.on("data", (chunk) => {
+          size += chunk.length;
+          if (size > MAX_SNAPSHOT_BYTES) req.destroy();
+          else chunks.push(chunk);
+        });
+        res.on("end", () => {
+          try {
+            resolve(size > MAX_SNAPSHOT_BYTES ? null : JSON.parse(Buffer.concat(chunks).toString("utf8")));
+          } catch (exc) {
+            resolve(null);
+          }
+        });
+        res.on("error", () => resolve(null));
+        res.on("close", () => resolve(null));   // sans effet si `end` a déjà répondu
+      });
+    req.on("timeout", () => req.destroy());
+    req.on("error", () => resolve(null));
+    req.end();
+  });
+}
+
 async function waitForServer(port, { timeoutMs = 15000, intervalMs = 200, stillAlive = () => true } = {}) {
   const deadline = Date.now() + timeoutMs;
   for (;;) {
@@ -89,4 +128,4 @@ async function waitForServer(port, { timeoutMs = 15000, intervalMs = 200, stillA
   }
 }
 
-module.exports = { venvPython, childEnv, parseProfiles, loadProfiles, webArgs, profileUrl, isProfileUrl, probe, waitForServer };
+module.exports = { venvPython, childEnv, parseProfiles, loadProfiles, webArgs, profileUrl, isProfileUrl, probe, fetchSnapshot, waitForServer };

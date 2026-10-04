@@ -1,6 +1,6 @@
 "use strict";
 /*
- * Application de bureau tradeagent : visionneuse (F1) et superviseur (F2).
+ * Application de bureau tradeagent : visionneuse (F1), superviseur (F2) et notifications de bureau (F3).
  *
  * Visionneuse : pour chaque profil, on lance `python -m tradeagent web --profile X` (l'interface web locale
  * en lecture seule, inchangée) et on l'affiche dans un onglet.
@@ -10,6 +10,10 @@
  * message IPC pour ça. Reprendre (`resume`) et réinitialiser (`reset`) restent en ligne de commande.
  * Fermer la fenêtre la range dans la zone de notification, les bots continuent ; « Quitter » les arrête
  * proprement (voir lib/supervisor.js).
+ *
+ * Notifications : le processus principal relit `/api/snapshot` de chaque profil (GET, boucle locale) et
+ * prévient sur transition (mort, suspension, palier, silence, budget API épuisé ; voir lib/notifier.js).
+ * Sortant uniquement : une notification ouvre la fenêtre sur le profil, rien de plus.
  *
  * Sécurité (le bot manipule de l'argent, même fictif) :
  *  - la page d'un profil tourne en bac à sable, sans Node, sans preload : elle n'a aucun moyen de parler
@@ -24,6 +28,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const backend = require("./lib/backend");
 const { Supervisor } = require("./lib/supervisor");
+const { Watcher } = require("./lib/notifier");
 
 const TAB_BAR_HEIGHT = 40;          // même valeur que .tabs dans shell.css
 const PARTITION = "tradeagent";     // session à part, en mémoire : rien n'est écrit sur disque par les pages
@@ -32,10 +37,14 @@ const SMOKE_DIR = process.env.TRADEAGENT_DESKTOP_SMOKE || "";   // vérification
 const SMOKE_BOT = process.env.TRADEAGENT_DESKTOP_SMOKE_BOT || "";   // ... en démarrant puis arrêtant ce bot
 const LOG_DIR = path.join(ROOT, "data", "logs");
 const BOT_LABELS = { running: "en marche", stopping: "arrêt en cours…", stopped: "arrêté" };
+const WATCH_MS = 15000;             // cadence de relecture des instantanés pour les notifications
 
 let win = null;
 let tray = null;
 let supervisor = null;
+let watcher = null;
+const liveNotes = new Set();        // une notification libérée par le ramasse-miettes perd son clic
+const smokeNotes = [];              // en vérification automatique : notées dans state.json, pas affichées
 let quitting = false;        // « Quitter » a été confirmé : la fenêtre peut vraiment se fermer
 let trayHintShown = false;
 let shellReady = false;
@@ -203,7 +212,31 @@ async function boot() {
     if (state.active === p.name) showActive();
     else publish();
   })));
+  watcher = new Watcher({
+    fetchSnapshot: backend.fetchSnapshot, isRunning: (name) => botStatus(name) === "running", notify: notifyUser,
+  });
+  await watch();
+  setInterval(watch, WATCH_MS);
   if (SMOKE_DIR) smoke();
+}
+
+// ---------------------------------------------------------------- notifications de bureau (sortantes uniquement)
+function watch() {
+  if (!watcher || quitting) return Promise.resolve();
+  return watcher.poll(state.profiles.filter((p) => p.status === "ready")).catch((exc) => console.error(`[notifications] ${exc.message}`));
+}
+
+function notifyUser(name, { title, body }) {
+  if (SMOKE_DIR) {
+    smokeNotes.push({ profile: name, title, body });
+    return;
+  }
+  if (!Notification.isSupported()) return;
+  const note = new Notification({ title, body });
+  liveNotes.add(note);
+  note.on("click", () => { liveNotes.delete(note); showWindow(); select(name); });
+  note.on("close", () => liveNotes.delete(note));
+  note.show();
 }
 
 // ---------------------------------------------------------------- bots (menu natif et zone de notification)
@@ -229,6 +262,7 @@ function stopBot(name) {
 function onBotChange(name, bot) {
   refreshMenus();
   publish();
+  if (bot.status === "stopped") watch();   // un bot qui meurt écrit son état avant de sortir : le lire tout de suite
   if (bot.status !== "stopped" || bot.expected || quitting) return;
   // Arrêt que personne n'a demandé : refus au démarrage (clé absente, base déjà utilisée), mort, halted, plantage.
   const title = `Le bot « ${name} » s'est arrêté`;
@@ -358,9 +392,11 @@ async function smoke() {
     fs.writeFileSync(path.join(SMOKE_DIR, "view.png"), (await active.view.webContents.capturePage()).toPNG());
   }
   if (SMOKE_BOT) await supervisor.stopAll();
+  await watch();
   fs.writeFileSync(path.join(SMOKE_DIR, "state.json"), JSON.stringify({
     profiles: state.profiles.map((p) => ({ name: p.name, port: p.port, status: p.status, error: p.error })),
     hidden, bot_during: during, bot_after: SMOKE_BOT ? supervisor.state(SMOKE_BOT) : null,
+    watch: watcher.view(), notifications: smokeNotes,
   }, null, 2));
   app.quit();
 }

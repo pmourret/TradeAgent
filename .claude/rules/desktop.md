@@ -14,12 +14,13 @@ Coquille mince autour de l'interface web locale. `web.py` reste la seule interfa
 - Le superviseur démarre et arrête, rien d'autre : jamais `reset`, `resume`, `--agent`, `--feed`, `live`.
 - Dans les pages (`shell.js`) : `textContent` et classes CSS seulement ; ni `innerHTML`, ni style en ligne, ni ressource externe.
 - Les profils (noms, ports) se lisent dans `profiles.py` via Python, jamais recopiés côté Node.
+- Les notifications (`lib/notifier.js`) sont sortantes uniquement : elles lisent `/api/snapshot` en GET sur la boucle locale, notifient une transition, et un clic ne fait qu'ouvrir la fenêtre. Jamais le texte de l'agent dedans : la raison d'une mort (écrite par le kill switch seul) est reprise, celle d'un `halted` non (elle cite la dernière erreur, donc parfois un bout de réponse du LLM). Un texte de notification n'affirme que ce que l'instantané prouve (pas de « positions liquidées »).
 - Fermer la fenêtre range l'application et les bots continuent ; seul « Quitter » les arrête, par `stop` sur leur entrée standard (`run --stop-on-stdin`). L'arrêt sec n'est qu'un dernier recours après délai.
 
 ## Organisation
 
 - `main.js` : tout ce qui dépend d'Electron (fenêtre, onglets, menus, zone de notification, sortie).
-- `lib/backend.js`, `lib/supervisor.js` : logique sans Electron, testée par `node --test`. Toute nouvelle logique testable va dans `lib/`, pas dans `main.js`.
+- `lib/backend.js`, `lib/supervisor.js`, `lib/notifier.js` : logique sans Electron, testée par `node --test`. Toute nouvelle logique testable va dans `lib/`, pas dans `main.js`.
 - Tests Node hors réseau ; les faux bots sont de petits scripts Node, jamais le vrai Python.
 
 ## Pièges

@@ -117,7 +117,19 @@ Elle sert aussi à **démarrer et arrêter les bots** :
 
 Ce que l'application ne fait pas, volontairement : reprendre un bot `halted` (`tradeagent resume`) ou repartir d'une nouvelle vie (`tradeagent reset`) restent en ligne de commande, et aucune page ne peut agir sur un bot (les actions sont dans les menus natifs, pas dans l'interface web). Elle ne voit pas non plus un bot lancé ailleurs (`scripts/start`, un terminal) : sa pastille reste vide, et vouloir le démarrer une seconde fois est refusé par le verrou de la base.
 
-Pas encore faits : notifications de bureau sur les changements d'état (mort, palier), version portable.
+Elle **prévient par une notification de bureau** quand l'état d'un profil change. Elle relit pour cela l'instantané en lecture seule de chaque profil toutes les 15 secondes ; un clic sur la notification ouvre la fenêtre sur le profil concerné, rien de plus :
+
+| Notification | Quand |
+|---|---|
+| Le bot est mort | Le kill switch s'est déclenché (mise perdue ou drawdown maximal atteint). La notification donne la raison et demande de vérifier sur la page qu'il ne reste aucune position : elle n'affirme pas que tout est vendu, la liquidation pouvant être désactivée ou avoir échoué |
+| Le bot est suspendu | Passage en `halted` : trop d'erreurs d'affilée, rien n'est vendu. Le détail de l'erreur reste sur la page du profil |
+| Changement de palier | Passage à prudent, défensif, ou retour à normal (le palier dépend du drawdown, c'est-à-dire du recul du portefeuille depuis son plus haut) |
+| Budget API épuisé | Le plafond du jour (UTC) ou le plafond total vient d'être atteint : l'agent est en pause, les garde-fous et le kill switch continuent |
+| Le bot ne donne plus de nouvelles | Un bot démarré par l'application n'a réussi aucun cycle depuis 3 cycles et 2 minutes (bot figé, ou flux de prix en panne : un cycle en erreur n'écrit rien) |
+
+Limites : seules les **transitions** sont notifiées (un bot déjà mort au lancement de l'application ne notifie pas, la page le montre) ; rien n'arrive si l'application est quittée ou le PC éteint ; le silence n'est surveillé que pour les bots démarrés par l'application (les autres notifications marchent aussi pour un bot lancé ailleurs, tant que l'application est ouverte) ; si l'interface web d'un profil s'arrête ou ne répond plus, ce profil n'est plus surveillé (son onglet affiche l'erreur) ; la mort d'un bot démarré par l'application donne deux notifications, celle-ci et celle de l'arrêt du processus. Les notifications ne contiennent jamais le texte écrit par l'agent.
+
+Pas encore fait : version portable.
 
 Les protections de l'interface web restent en place, et la fenêtre en ajoute : chaque page tourne en bac à sable, sans accès à Node ni au processus principal ; elle ne peut ni naviguer ni charger quoi que ce soit hors de son serveur local, ni ouvrir de fenêtre, ni obtenir de permission ; un port n'est affiché que si c'est bien tradeagent qui y répond.
 

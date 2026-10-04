@@ -65,6 +65,56 @@ test("un port n'est affiché que si c'est notre serveur qui y répond", async ()
   assert.equal(await backend.probe(port), "down");   // port rendu : plus personne
 });
 
+test("l'instantané n'est lu que sur notre serveur, en GET, et une réponse inutilisable donne null", async () => {
+  const methods = [];
+  const answer = (status, headers, body) => new Promise((resolve) => {
+    const server = http.createServer((req, res) => {
+      methods.push(req.method);
+      res.writeHead(status, headers);
+      res.end(body);
+    });
+    server.listen(0, "127.0.0.1", () => resolve(server));
+  });
+  const cases = [
+    [200, { Server: "tradeagent" }, '{"has_data": false, "generated_at": 1}', { has_data: false, generated_at: 1 }],
+    [200, { Server: "nginx" }, '{"has_data": false}', null],
+    [503, { Server: "tradeagent" }, '{"error": "base momentanément illisible"}', null],
+    [200, { Server: "tradeagent" }, "pas du json", null],
+    [200, { Server: "tradeagent" }, `{"x": "${"a".repeat(5 * 1024 * 1024)}"}`, null],
+  ];
+  for (const [status, headers, body, expected] of cases) {
+    const server = await answer(status, headers, body);
+    try {
+      assert.deepEqual(await backend.fetchSnapshot(server.address().port), expected);
+    } finally {
+      server.closeAllConnections();
+      await new Promise((r) => server.close(r));
+    }
+  }
+  assert.deepEqual([...new Set(methods)], ["GET"]);
+
+  // Une réponse au compte-gouttes ne bloque pas la surveillance : la lecture entière est bornée.
+  const drip = http.createServer((_req, res) => {
+    res.writeHead(200, { Server: "tradeagent" });
+    const timer = setInterval(() => res.write(" "), 20);
+    res.on("close", () => clearInterval(timer));
+  });
+  await new Promise((r) => drip.listen(0, "127.0.0.1", r));
+  try {
+    const started = Date.now();
+    assert.equal(await backend.fetchSnapshot(drip.address().port, 200), null);
+    assert.ok(Date.now() - started < 2000);
+  } finally {
+    drip.closeAllConnections();
+    await new Promise((r) => drip.close(r));
+  }
+
+  const gone = await serve({});
+  const port = gone.address().port;
+  await new Promise((r) => gone.close(r));
+  assert.equal(await backend.fetchSnapshot(port), null);
+});
+
 test("l'attente s'arrête dès que le processus est mort", async () => {
   const closed = await serve({});
   const port = closed.address().port;

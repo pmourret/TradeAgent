@@ -33,6 +33,16 @@ test("la barre d'onglets n'écrit jamais de HTML et ne connaît aucune action su
   assert.deepEqual(channels(shell, /window\.desktop\.(\w+)\(/g).filter((v, i, a) => a.indexOf(v) === i), ["onTabs", "ready", "select"]);
 });
 
+test("les notifications sont sortantes : lecture seule du serveur local, aucun moyen d'agir sur un bot", () => {
+  const notifier = code(read(path.join("lib", "notifier.js")));
+  for (const forbidden of ["require(", "spawn", "stdin", "fetch(", "process."]) {
+    assert.ok(!notifier.includes(forbidden), forbidden);
+  }
+  const backend = code(read(path.join("lib", "backend.js")));
+  assert.deepEqual(channels(backend, /method:\s*"([^"]+)"/g), ["GET", "HEAD"]);
+  assert.ok(!backend.includes("req.write("));
+});
+
 test("le superviseur ne sait ni réinitialiser ni reprendre un bot", () => {
   const sup = code(read(path.join("lib", "supervisor.js")));
   for (const forbidden of ['"reset"', '"resume"', '"--yes"', '"live"', '"--agent"', '"--feed"']) {

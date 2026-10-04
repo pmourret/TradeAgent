@@ -231,7 +231,7 @@ def test_le_prompt_donne_les_vrais_frais_le_loyer_et_les_bornes_de_reveil():
     assert "usually the right one" not in system and "counts as failure" in system
     assert "api_safety_caps_left" in system and "api_cost_per_call" in system
     assert "next_check_minutes" in system and "wake_if_move_pct" in system
-    assert storage.get(PROMPT_VERSION_KEY) == PROMPT_VERSION == 6
+    assert storage.get(PROMPT_VERSION_KEY) == PROMPT_VERSION == 7
 
 
 def test_les_cles_de_reveil_sont_lues_avec_prudence():
@@ -692,7 +692,7 @@ def test_le_schema_de_reponse_couvre_la_decision_et_le_reveil():
 
     assert DECISION_SCHEMA["additionalProperties"] is False
     assert set(DECISION_SCHEMA["required"]) == set(DECISION_SCHEMA["properties"]) == {
-        "action", "symbol", "amount_quote", "reasoning", "next_check_minutes", "wake_if_move_pct"}
+        "action", "symbol", "amount_quote", "reasoning", "exit_below", "next_check_minutes", "wake_if_move_pct"}
     assert DECISION_SCHEMA["properties"]["action"]["enum"] == ["buy", "sell", "hold"]
     # Une réponse conforme au schéma, avec ses null, reste lisible par le code existant.
     text = '{"action":"hold","symbol":null,"amount_quote":null,"reasoning":"calme","next_check_minutes":null,"wake_if_move_pct":null}'
@@ -772,3 +772,139 @@ def test_le_prompt_montre_le_gain_latent_et_l_age_de_chaque_position():
     assert data["positions"]["ETH/EUR"] == {"qty": 0.0, "value": 0.0}           # pas de position : rien de plus
     system = client.calls[0][0]
     assert "trend_vs_sma_pct" in system and "pnl_pct" in system and "not on getting back to your entry price" in system
+
+
+# -- plan de sortie fixé à l'achat, prompt allégé ---------------------------------------------------------------
+
+def decision_reply(action, symbol=None, amount=None, exit_below=None, minutes=None, move=None, why="raison"):
+    return reply(json.dumps({"action": action, "symbol": symbol, "amount_quote": amount, "reasoning": why,
+                             "exit_below": exit_below, "next_check_minutes": minutes, "wake_if_move_pct": move}))
+
+
+def with_market(view_, atr=1.0):
+    from dataclasses import replace
+
+    market = {s: {**m, "atr_pct": atr} for s, m in view_.market.items()}
+    return replace(view_, market=market)
+
+
+def test_un_achat_garde_son_plan_de_sortie_et_sa_raison():
+    from tradeagent.llm_agent import PLAN_KEY
+
+    agent, client, clock, storage, _ = make([decision_reply("buy", "BTC/EUR", 10, exit_below=57_000, why="tendance haussière sur 30 j"),
+                                             reply(HOLD)])
+    agent.decide(with_market(priced(clock(), btc=60_000.0)))
+    assert storage.get(PLAN_KEY) == {"BTC/EUR": {"exit_below": 57000.0, "thesis": "tendance haussière sur 30 j", "set_at": START}}
+
+    clock.advance(3_600)                                                        # l'achat a eu lieu : il détient du BTC
+    agent.decide(with_market(priced(clock(), btc=59_000.0, positions={
+        **HELD, "BTC/EUR": {**HELD["BTC/EUR"], "price": 59_000.0}})))
+    data = json.loads(client.calls[1][1].split("\n", 1)[1])
+    btc = data["positions"]["BTC/EUR"]
+    assert btc["exit_below"] == 57000.0 and btc["exit_crossed"] is False and btc["thesis"] == "tendance haussière sur 30 j"
+    assert "exit_below" not in data["positions"]["ETH/EUR"]
+
+
+def test_le_niveau_de_sortie_est_borne_par_le_code():
+    from tradeagent.llm_agent import PLAN_KEY
+
+    cases = [
+        (59_900, 59_400.0),      # dans le bruit d'une bougie (amplitude 1 %) : repoussé à une amplitude sous le prix
+        (61_000, 59_400.0),      # au-dessus du prix : pareil
+        (10_000, 45_000.0),      # absurde : pas plus de 25 % sous le prix
+        (None, 58_200.0),        # achat sans plan : le code en pose un, 3 amplitudes (au moins 3 %) sous le prix
+        (57_123.456, 57_123.0),  # cinq chiffres significatifs
+    ]
+    for asked, kept in cases:
+        agent, _, clock, storage, _ = make([decision_reply("buy", "BTC/EUR", 10, exit_below=asked)])
+        agent.decide(with_market(priced(clock(), btc=60_000.0), atr=1.0))
+        assert storage.get(PLAN_KEY)["BTC/EUR"]["exit_below"] == kept, asked
+
+    wide, _, clock, storage, _ = make([decision_reply("buy", "BTC/EUR", 10)])
+    wide.decide(with_market(priced(clock(), btc=60_000.0), atr=2.0))            # marché agité : 3 x 2 % = 6 % sous le prix
+    assert storage.get(PLAN_KEY)["BTC/EUR"]["exit_below"] == 56_400.0
+
+
+def test_le_franchissement_du_niveau_reveille_l_agent():
+    agent, client, clock, storage, _ = make([decision_reply("buy", "BTC/EUR", 10, exit_below=57_000, minutes=1_440, move=20),
+                                             reply(HOLD)], position_wake_move_pct=20.0)
+    agent.decide(with_market(priced(clock(), btc=60_000.0)))
+    clock.advance(3_600)
+    held = lambda price: with_market(priced(clock(), btc=price, positions={   # noqa: E731
+        **HELD, "BTC/EUR": {**HELD["BTC/EUR"], "price": price}}))
+    assert agent.decide(held(57_001.0)).skipped                                 # -5 %, mais au-dessus de son niveau : il dort
+    woken = agent.decide(held(57_000.0))                                        # niveau touché : appelé
+    assert not woken.skipped and len(client.calls) == 2
+    data = json.loads(client.calls[1][1].split("\n", 1)[1])
+    assert data["positions"]["BTC/EUR"]["exit_crossed"] is True
+
+
+def test_un_hold_peut_deplacer_le_niveau_et_une_position_fermee_oublie_son_plan():
+    from tradeagent.llm_agent import PLAN_KEY
+
+    agent, client, clock, storage, _ = make([decision_reply("buy", "BTC/EUR", 10, exit_below=57_000, why="achat"),
+                                             decision_reply("hold", "BTC/EUR", exit_below=61_000, why="je remonte mon niveau"),
+                                             decision_reply("hold", "ETH/EUR", exit_below=2_000),
+                                             reply(HOLD)])
+    agent.decide(with_market(priced(clock(), btc=60_000.0)))
+    held = lambda price: with_market(priced(clock(), btc=price, positions={   # noqa: E731
+        **HELD, "BTC/EUR": {**HELD["BTC/EUR"], "price": price}}))
+    clock.advance(3_600)
+    agent.decide(held(64_000.0))
+    plan = storage.get(PLAN_KEY)["BTC/EUR"]
+    assert plan["exit_below"] == 61_000.0 and plan["thesis"] == "achat"         # niveau remonté, raison d'achat gardée
+    clock.advance(3_600)
+    agent.decide(held(64_000.0))                                                # un niveau sur un symbole non détenu : ignoré
+    assert set(storage.get(PLAN_KEY)) == {"BTC/EUR"}
+    clock.advance(3_600)
+    agent.decide(with_market(priced(clock(), btc=64_000.0)))                    # position vendue entre-temps
+    assert storage.get(PLAN_KEY) == {}
+
+
+def test_reset_efface_les_plans_de_sortie():
+    from tradeagent.app import LIFE_KEYS
+    from tradeagent.llm_agent import PLAN_KEY
+
+    assert PLAN_KEY in LIFE_KEYS
+
+
+def test_le_prompt_n_envoie_plus_ce_que_les_indicateurs_disent_deja():
+    from dataclasses import replace
+
+    full = {"last": 1.0, "volatility_pct_per_candle": 0.5, "atr_pct": 1.2, "daily_closes": [1.0, 2.0, 3.0],
+            "closes": [float(i) for i in range(24)]}
+    short = {"last": 1.0, "volatility_pct_per_candle": 0.5, "closes": [float(i) for i in range(24)]}
+    agent, client, clock, *_ = make([reply(HOLD)])
+    agent.decide(replace(priced(clock()), market={"BTC/EUR": full, "ETH/EUR": short}))
+    data = json.loads(client.calls[0][1].split("\n", 1)[1])
+    assert data["market"]["BTC/EUR"]["closes"] == [18.0, 19.0, 20.0, 21.0, 22.0, 23.0]
+    assert "volatility_pct_per_candle" not in data["market"]["BTC/EUR"] and data["market"]["BTC/EUR"]["atr_pct"] == 1.2
+    assert data["market"]["ETH/EUR"] == short                                   # historique court : rien à retirer
+
+
+def test_le_plan_par_defaut_reste_a_3_pour_cent_au_moins_et_une_vente_ne_pose_pas_de_plan():
+    from tradeagent.llm_agent import PLAN_KEY
+
+    calm, _, clock, storage, _ = make([decision_reply("buy", "BTC/EUR", 10)])
+    calm.decide(with_market(priced(clock(), btc=60_000.0), atr=0.5))            # marché calme : 3 x 0,5 % serait trop serré
+    assert storage.get(PLAN_KEY)["BTC/EUR"]["exit_below"] == 58_200.0
+
+    agent, _, clock, storage, _ = make([decision_reply("buy", "BTC/EUR", 10, exit_below=57_000),
+                                        decision_reply("sell", "BTC/EUR", 5, exit_below=50_000)])
+    agent.decide(with_market(priced(clock(), btc=60_000.0)))
+    clock.advance(3_600)
+    agent.decide(with_market(priced(clock(), btc=60_000.0, positions=HELD)))
+    assert storage.get(PLAN_KEY)["BTC/EUR"]["exit_below"] == 57_000.0           # une vente partielle ne déplace rien
+
+
+def test_une_vente_sans_montant_vend_toute_la_position():
+    agent, *_ = make([decision_reply("sell", "BTC/EUR", None)])
+    sold = agent.decide(priced(START, positions=HELD))
+    assert (sold.action, sold.symbol, sold.amount_quote) == ("sell", "BTC/EUR", 60.0)
+
+    for bad in (decision_reply("sell", "ETH/EUR", None),          # rien à vendre sur ce symbole
+                decision_reply("sell", None, None),
+                decision_reply("buy", "BTC/EUR", None)):          # un achat sans montant reste une erreur
+        agent, *_ = make([bad])
+        with pytest.raises(InvalidDecision):
+            agent.decide(priced(START, positions=HELD))

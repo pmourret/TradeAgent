@@ -32,9 +32,14 @@ log = logging.getLogger("tradeagent")
 
 LAST_CALL_KEY = "llm_last_call"
 WAKE_KEY = "llm_wake"                 # le réveil choisi par l'agent à son dernier appel
+PLAN_KEY = "llm_plan"                 # {symbole: {exit_below, thesis, set_at}} : le plan de sortie fixé à l'achat
+MAX_EXIT_DISTANCE_PCT = 25.0          # un niveau de sortie plus loin que ça sous le prix n'en est pas un
+DEFAULT_EXIT_ATR = 3.0                # sans niveau donné : 3 amplitudes moyennes sous le prix (au moins 3 %)
+THESIS_CHARS = 160
+KEPT_CLOSES = 6                       # les indicateurs résument le reste : inutile de payer 24 clôtures par symbole
 IDLE_KEY = "llm_idle"                 # {since, cause} : l'agent n'est plus appelé faute d'ordre possible
 PROMPT_VERSION_KEY = "llm_prompt_version"
-PROMPT_VERSION = 6                    # à incrémenter à chaque changement de SYSTEM_PROMPT ou des données envoyées
+PROMPT_VERSION = 7                    # à incrémenter à chaque changement de SYSTEM_PROMPT ou des données envoyées
 MIN_WAKE_MOVE_PCT, MAX_WAKE_MOVE_PCT = 0.5, 50.0
 
 SYSTEM_PROMPT = """You manage a very small spot crypto portfolio (the quote currency is given in the data). \
@@ -68,10 +73,18 @@ are possible.
 
 Answer with exactly one JSON object and nothing else:
 {"action": "buy" | "sell" | "hold", "symbol": "BTC/EUR", "amount_quote": 12.5, "reasoning": "one or two short sentences", \
-"next_check_minutes": null, "wake_if_move_pct": null}
-- amount_quote is an amount in the quote currency, not a quantity. For "hold", symbol and amount_quote are null.
+"exit_below": 61000, "next_check_minutes": null, "wake_if_move_pct": null}
+- amount_quote is an amount in the quote currency, not a quantity. For "hold", symbol and amount_quote are null. \
+To sell a whole position, give its "value" (a sell with a null amount sells the whole position).
 - symbol must be one of the symbols in the data.
 - reasoning stays under 300 characters.
+- "exit_below" is your exit plan, required when you buy: the price under which your reason for buying no longer holds. \
+Put it beyond ordinary noise (several times "atr_pct" below the price, under a recent low), not just under the last \
+candle. It is kept with the position, shown back to you ("exit_below", "thesis", "exit_crossed"), and you are woken \
+when the price crosses it. While the price stays above it and the longer trend is intact, a pullback is not a reason \
+to sell: selling on the first weak day is how a good entry turns into two fees and no gain. Sell when the level is \
+crossed or when the longer trend itself turns. To move the level later, answer "hold" with that "symbol" and a new \
+"exit_below"; otherwise null.
 You are not called on a clock. After each answer you are called again when a price has moved enough or after a \
 quiet period, whichever comes first; "call_interval_minutes" in the data gives the defaults. Set "next_check_minutes" \
 and "wake_if_move_pct" to null to keep those defaults, or give numbers to change them:
@@ -95,10 +108,12 @@ DECISION_SCHEMA: dict[str, Any] = {
         "symbol": _nullable("string"),
         "amount_quote": _nullable("number"),
         "reasoning": {"type": "string"},
+        "exit_below": _nullable("number"),
         "next_check_minutes": _nullable("number"),
         "wake_if_move_pct": _nullable("number"),
     },
-    "required": ["action", "symbol", "amount_quote", "reasoning", "next_check_minutes", "wake_if_move_pct"],
+    "required": ["action", "symbol", "amount_quote", "reasoning", "exit_below", "next_check_minutes",
+                 "wake_if_move_pct"],
     "additionalProperties": False,
 }
 
@@ -142,6 +157,20 @@ def parse_wake(text: str) -> tuple[float | None, float | None]:
         return None, None
     minutes, move = _number(raw.get("next_check_minutes")), _number(raw.get("wake_if_move_pct"))
     return (minutes if minutes and minutes > 0 else None), (move if move and move > 0 else None)
+
+
+def parse_plan(text: str) -> tuple[str | None, float | None]:
+    """Le symbole et le niveau de sortie donnés dans la réponse, ou None. Jamais une erreur."""
+    cleaned = re.sub(r"^```(?:json)?\s*|\s*```$", "", text.strip())
+    try:
+        raw = json.loads(cleaned)
+    except ValueError:
+        return None, None
+    if not isinstance(raw, dict):
+        return None, None
+    symbol = raw.get("symbol") if isinstance(raw.get("symbol"), str) else None
+    level = _number(raw.get("exit_below"))
+    return symbol, (level if level and level > 0 else None)
 
 
 class LLMAgent:
@@ -195,6 +224,9 @@ class LLMAgent:
             return None
         if wake.get("tier") != view.risk_tier:
             return None                                   # changement de palier : toujours réveillé
+        for symbol, plan in self._plans(view).items():
+            if view.positions[symbol]["price"] <= plan["exit_below"]:
+                return None                               # son propre niveau de sortie est franchi : à lui de décider
         move = wake.get("move_pct")
         if move:
             for symbol, reference in (wake.get("prices") or {}).items():
@@ -202,6 +234,64 @@ class LLMAgent:
                 if price and reference and abs(price / reference - 1) * 100 >= move:
                     return None                           # le mouvement demandé a eu lieu
         return f"sommeil choisi par l'agent : encore {(wake['at'] - now) / 60:.0f} min"
+
+    def _plans(self, view: MarketView) -> dict[str, dict[str, Any]]:
+        """Les plans de sortie des positions encore ouvertes (un plan sans position est oublié)."""
+        stored = self._storage.get(PLAN_KEY)
+        stored = stored if isinstance(stored, dict) else {}
+        alive = {s: p for s, p in stored.items()
+                 if s in view.positions and view.positions[s]["quantity"] > 0 and isinstance(p, dict)
+                 and _number(p.get("exit_below"))}
+        if alive != stored:
+            self._storage.set(PLAN_KEY, alive)
+        return alive
+
+    def _set_plan(self, view: MarketView, decision: Decision, text: str, now: float) -> None:
+        """Garde le plan de sortie d'un achat, ou déplace celui d'une position sur un « hold ». Le niveau est borné
+        par le code : sous le prix, pas dans le bruit d'une bougie, pas à plus de 25 % du prix."""
+        symbol, level = parse_plan(text)
+        if decision.action == "buy":
+            symbol = decision.symbol
+        elif decision.action != "hold" or level is None:
+            return
+        if symbol not in view.positions:
+            return
+        price = view.positions[symbol]["price"]
+        if not price or price <= 0:
+            return
+        plans = self._plans(view)
+        if decision.action == "hold" and symbol not in plans:
+            return                                        # rien à déplacer : pas de position suivie sur ce symbole
+        atr = _number((view.market.get(symbol) or {}).get("atr_pct")) or 1.0
+        if level is None:
+            level = price * (1 - max(DEFAULT_EXIT_ATR * atr, 3.0) / 100)      # achat sans plan : le code en pose un
+        highest = price * (1 - atr / 100)                 # au moins une amplitude moyenne sous le prix
+        lowest = price * (1 - MAX_EXIT_DISTANCE_PCT / 100)
+        level = min(max(level, lowest), highest)
+        previous = plans.get(symbol, {})
+        plans[symbol] = {
+            "exit_below": float(f"{level:.5g}"),
+            "thesis": decision.reasoning[:THESIS_CHARS] if decision.action == "buy" else previous.get("thesis", ""),
+            "set_at": now,
+        }
+        self._storage.set(PLAN_KEY, plans)
+
+    @staticmethod
+    def _complete_sell(text: str, view: MarketView) -> str:
+        """Une vente sans montant vaut « je vends toute la position » : on complète au lieu de jeter une décision
+        payée (deux fois sur le backtest réel du 2026-10-04, l'agent a répondu ainsi en franchissant son niveau de
+        sortie). Tout le reste est laissé tel quel : la validation stricte de `Decision` s'applique ensuite."""
+        cleaned = re.sub(r"^```(?:json)?\s*|\s*```$", "", text.strip())
+        try:
+            raw = json.loads(cleaned)
+        except ValueError:
+            return text
+        if not isinstance(raw, dict) or raw.get("action") != "sell" or raw.get("amount_quote") is not None:
+            return text
+        held = (view.positions.get(raw.get("symbol")) or {}).get("value", 0.0) if isinstance(raw.get("symbol"), str) else 0.0
+        if held <= 0:
+            return text
+        return json.dumps({**raw, "amount_quote": held})
 
     def _set_wake(self, view: MarketView, now: float, text: str) -> None:
         llm = self._cfg.llm
@@ -240,6 +330,7 @@ class LLMAgent:
     def _positions(self, view: MarketView) -> dict[str, dict[str, Any]]:
         """Chaque position avec, quand elle est ouverte, son prix de revient, son gain ou sa perte latente et son âge."""
         stats = position_stats(self._storage.fills_since(self._life_start()))
+        plans = self._plans(view)
         out: dict[str, dict[str, Any]] = {}
         for symbol, p in view.positions.items():
             row: dict[str, Any] = {"qty": p["quantity"], "value": p["value"]}
@@ -248,6 +339,22 @@ class LLMAgent:
                 row["entry_price"] = float(f"{known['entry_price']:.5g}")
                 row["pnl_pct"] = round((p["price"] / known["entry_price"] - 1) * 100, 2)
                 row["held_hours"] = round((view.timestamp - known["opened"]) / 3600)
+            plan = plans.get(symbol)
+            if plan and p["quantity"] > 0:
+                row["exit_below"] = plan["exit_below"]
+                row["exit_crossed"] = p["price"] <= plan["exit_below"]
+                row["thesis"] = plan.get("thesis", "")
+            out[symbol] = row
+        return out
+
+    @staticmethod
+    def _compact_market(market: dict[str, dict[str, Any]]) -> dict[str, dict[str, Any]]:
+        """Le résumé de marché sans ce que les indicateurs disent déjà : chaque token est payé à chaque appel."""
+        out = {}
+        for symbol, summary in market.items():
+            row = {k: v for k, v in summary.items() if k != "volatility_pct_per_candle" or "atr_pct" not in summary}
+            if "closes" in row and "daily_closes" in row:
+                row["closes"] = row["closes"][-KEPT_CLOSES:]
             out[symbol] = row
         return out
 
@@ -268,7 +375,7 @@ class LLMAgent:
             "risk_tier": view.risk_tier,
             "positions": self._positions(view),
             "candle_timeframe": view.candle_timeframe,
-            "market": view.market,
+            "market": self._compact_market(view.market),
             "limits": view.limits,
             # Le coût d'un aller-retour est donné tout calculé : le LLM additionnait frais et glissement et prenait
             # la somme pour un aller-retour (premier backtest réel, 2026-10-04).
@@ -329,8 +436,9 @@ class LLMAgent:
         log.info("appel LLM : %d tokens en entrée, %d en sortie, %.4f €",
                  reply.usage.input_tokens, reply.usage.output_tokens, cost)
         try:
-            decision = Decision.from_json(reply.text)
+            decision = Decision.from_json(self._complete_sell(reply.text, view))
         except InvalidDecision as exc:
             raise InvalidDecision(f"{exc} | réponse : {reply.text[:120]!r}") from exc
+        self._set_plan(view, decision, reply.text, now)
         self._set_wake(view, now, reply.text)
         return decision

@@ -108,6 +108,7 @@ def test_tendance_et_fourchette_sur_30_jours():
     month = s["range"]["30d"]
     assert month["high"] == 200.0 and month["low"] == 100.0
     assert month["pos_pct"] == 80 and month["from_high_pct"] == pytest.approx(-10.0)
+    assert s["range"]["7d"]["low"] > 150 and s["range"]["7d"]["high"] == 200.0          # la semaine, pas le mois
     assert s["rsi"]["1h"] < 30 and 30 < s["rsi"]["1d"] <= 100                   # survendu sur l'heure, pas sur le jour
     assert len(s["daily_closes"]) == 10 and s["daily_closes"][-1] == 180.0
     assert s["atr_pct"] > 0

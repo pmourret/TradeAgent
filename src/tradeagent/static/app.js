@@ -163,14 +163,24 @@
     return v;
   }
 
+  // Un agent sans LLM (hold, board) ne paie aucun loyer : tout ce qui parle d'API est alors masqué.
+  function usesApi(s) {
+    return s.api.calls_life > 0 || s.agent === "llm" || s.agent === "llm-fake";
+  }
+
   function renderKpis(s) {
-    const m = s.money, a = s.api;
+    const m = s.money, a = s.api, rent = usesApi(s);
+    $("tileApi").hidden = !rent;
+    $("apiCard").hidden = !rent;
+    $("chartTitle").textContent = rent ? "Equity nette du loyer, depuis la mise" : "Equity depuis la mise";
     $("kEquity").textContent = money(m.equity);
     $("kEquitySub").textContent = signed(m.change_pct, 2) + " % par rapport à la mise de " + money(m.stake);
     $("kNet").textContent = signed(m.net_result, Math.abs(m.net_result) > 0 && Math.abs(m.net_result) < 0.01 ? 4 : 2) + NBSP + sym();
-    $("kNetSub").textContent = "après " + money(a.spent_life, a.spent_life > 0 && a.spent_life < 0.01 ? 4 : 2) + " d'API (" + a.calls_life + " appels)";
+    $("kNetSub").textContent = rent
+      ? "après " + money(a.spent_life, a.spent_life > 0 && a.spent_life < 0.01 ? 4 : 2) + " d'API (" + a.calls_life + " appels)"
+      : "equity moins la mise, frais de trading compris";
     $("kDd").textContent = num(m.drawdown_pct, 1) + " %";
-    $("kDdSub").textContent = "net du loyer, depuis le plus haut : " + money(m.peak_equity);
+    $("kDdSub").textContent = (rent ? "net du loyer, depuis le plus haut : " : "depuis le plus haut : ") + money(m.peak_equity);
     $("kApi").textContent = money(a.spent_today, 3);
     $("kApiSub").textContent = "plafond du jour : " + money(a.daily_budget);
   }
@@ -278,7 +288,7 @@
       label.appendChild(el("span", null, num(item[0], 0) + " %"));
       marks.appendChild(label);
     });
-    $("gaugeText").textContent = "Drawdown actuel, net du loyer : " + num(dd, 1) + " % depuis le plus haut (" + money(s.money.peak_equity) +
+    $("gaugeText").textContent = "Drawdown actuel" + (usesApi(s) ? ", net du loyer" : "") + " : " + num(dd, 1) + " % depuis le plus haut (" + money(s.money.peak_equity) +
       "). Mort sous " + money(s.money.tier_lines.death) + " d'equity nette.";
   }
 

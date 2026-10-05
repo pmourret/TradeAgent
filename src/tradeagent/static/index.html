@@ -62,7 +62,7 @@
         <div id="kDd" class="value mono"></div>
         <div id="kDdSub" class="muted small"></div>
       </div>
-      <div class="tile">
+      <div id="tileApi" class="tile">
         <div class="label">API aujourd'hui</div>
         <div id="kApi" class="value mono"></div>
         <div id="kApiSub" class="muted small"></div>
@@ -72,7 +72,7 @@
     <div class="row">
       <section class="card grow-2">
         <div class="card-head">
-          <h2>Equity nette du loyer, depuis la mise</h2>
+          <h2 id="chartTitle">Equity depuis la mise</h2>
           <span id="chartMeta" class="muted small"></span>
         </div>
         <div id="chart" class="chart" role="img" aria-label="Courbe d'equity nette du loyer">
@@ -119,7 +119,7 @@
         </div>
       </section>
 
-      <section class="card grow-2">
+      <section id="apiCard" class="card grow-2">
         <div class="card-head">
           <h2>Loyer d'inférence</h2>
           <span id="apiCadence" class="muted small"></span>

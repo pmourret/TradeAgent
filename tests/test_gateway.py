@@ -181,6 +181,9 @@ def test_les_en_tetes_de_securite_sont_la_avec_les_formulaires_limites_au_site(s
     assert "unsafe" not in csp and "script-src 'self'" in csp
     assert headers["cache-control"] == "no-store" and headers["x-frame-options"] == "DENY"
     assert headers["strict-transport-security"].startswith("max-age=")
+    # « no-referrer » ferait envoyer « Origin: null » par le navigateur sur les formulaires : plus personne n'entrerait.
+    assert headers["referrer-policy"] == "same-origin"
+    assert request(served, "POST", "/login", form(user=USER, password=PASSWORD), Origin="null")[0] == 403
     assert "python" not in headers.get("server", "").lower()
 
 

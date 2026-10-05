@@ -50,6 +50,10 @@ HEADERS = {
     **SECURITY_HEADERS,
     "Content-Security-Policy": SECURITY_HEADERS["Content-Security-Policy"].replace("form-action 'none'", "form-action 'self'"),
     "Strict-Transport-Security": "max-age=31536000",
+    # Pas « no-referrer » ici : avec cette politique un navigateur envoie « Origin: null » quand il poste un
+    # formulaire, même vers son propre site, et le contrôle de l'origine refuserait toute connexion.
+    # « same-origin » : l'origine part vers ce site, rien ne part vers les autres.
+    "Referrer-Policy": "same-origin",
 }
 HTML_TYPE = "text/html; charset=utf-8"
 BAD_LOGIN = "Identifiant ou mot de passe incorrect."

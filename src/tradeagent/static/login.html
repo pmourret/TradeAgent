@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark light">
+<title>tradeagent</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="/auth.css">
+</head>
+<body>
+<main class="box">
+  <div class="brand">tradeagent</div>
+  <h1>Connexion</h1>
+  <p class="note" role="alert">{{message}}</p>
+  <form method="post" action="/login">
+    <label>Identifiant <input name="user" autocomplete="username" required autofocus></label>
+    <label>Mot de passe <input name="password" type="password" autocomplete="current-password" required></label>
+    <button type="submit">Se connecter</button>
+  </form>
+  <p class="muted">Interface en lecture seule. Argent fictif.</p>
+</main>
+</body>
+</html>

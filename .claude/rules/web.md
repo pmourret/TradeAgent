@@ -1,6 +1,6 @@
 ---
 paths:
-  - "src/tradeagent/{web,dashboard}.py"
+  - "src/tradeagent/{web,dashboard,gateway,auth}.py"
   - "src/tradeagent/static/**"
 ---
 

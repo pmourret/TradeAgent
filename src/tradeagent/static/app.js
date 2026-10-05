@@ -530,7 +530,11 @@
 
   async function refresh() {
     try {
-      const response = await fetch("/api/snapshot", { cache: "no-store" });
+      const response = await fetch("api/snapshot", { cache: "no-store" });   // relatif : la page vit aussi sous /p/<profil>/
+      if (response.status === 401) {     // interface distante, session expirée : la page renvoie vers la connexion
+        window.location.reload();
+        return;
+      }
       const body = await response.json();
       if (!response.ok) throw new Error(body.error || "HTTP " + response.status);
       state.snap = body;

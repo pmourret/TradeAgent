@@ -172,7 +172,34 @@ docker compose run --rm board status --all
 
 `tradeagent health --profile board` (code 0 ou 1) est ce que Docker interroge : le bot est en bonne santé s'il a enregistré un cycle depuis moins de trois intervalles. Un bot mort ou `halted` ne fait plus de cycle, il est donc signalé lui aussi.
 
-Ces conteneurs n'ont besoin d'aucun secret (argent fictif, prix publics) et n'ouvrent aucun port. **L'interface web n'est pas encore servie depuis le serveur** : elle attend un mode « derrière un proxy » et une identification, à concevoir. **Jamais construit ni lancé** : l'image n'a été ni construite ni essayée, et le projet n'a jamais tourné sous Linux.
+Les bots n'ont besoin d'aucun secret (argent fictif, prix publics) et n'ouvrent aucun port.
+
+### L'interface depuis un autre poste
+
+Le service `web` du `compose.yaml` lance `tradeagent serve` : la même page en lecture seule, pour plusieurs profils, sous une seule adresse (`https://trade.sternum-lab.duckdns.org/`), atteinte uniquement par Traefik. L'interface locale (`tradeagent web`) ne change pas et reste sur la boucle locale.
+
+```bash
+sudo mkdir -p /var/lib/docker/hiatus/tradeagent/auth && sudo chown 1000:1000 /var/lib/docker/hiatus/tradeagent/auth
+nano .env.web          # une ligne : TRADEAGENT_SETUP_CODE=un-code-que-tu-choisis   (12 caractères au moins)
+chmod 600 .env.web
+docker compose up -d web
+```
+
+À la première visite, la page propose de **créer le compte administrateur** : il demande le code d'installation ci-dessus (sans lui, le premier visiteur venu deviendrait administrateur), un identifiant et un mot de passe de 16 caractères au moins. Il n'y a qu'un compte et la création se ferme dès qu'il existe ; vide ensuite `.env.web` et relance `docker compose up -d web`, qui recrée le conteneur sans le code. Ne mets rien d'autre dans ce fichier. Puis : connexion, liste des profils, page de chaque profil.
+
+Ce que fait le code, et que les tests vérifient :
+
+- le serveur refuse de démarrer sans nom de domaine, et sans code d'installation tant qu'aucun compte n'existe ; hors du conteneur il n'écoute que sur la boucle locale (`--bind 0.0.0.0` est passé par le compose) ;
+- l'en-tête `Host` doit être exactement le nom déclaré, et le proxy doit annoncer du HTTPS ;
+- sans session, une page renvoie à la connexion et une donnée répond 401, que le chemin existe ou non ;
+- le mot de passe n'est gardé que sous forme d'empreinte (scrypt), dans `auth/auth.json`, avec l'identifiant et la clé qui signe les sessions : ce fichier est sensible, ne le copie pas ailleurs. Il est hors des bases des bots, que l'interface monte en lecture seule ;
+- la session est un cookie signé (`HttpOnly`, `Secure`, `SameSite=Strict`), valable sept jours ; se déconnecter annule toutes les sessions ;
+- cinq échecs en un quart d'heure bloquent la connexion pour tout le monde pendant ce quart d'heure (quelqu'un du réseau peut donc te bloquer, pas deviner ton mot de passe à la chaîne) ; les essais passent un par un, même envoyés en même temps ;
+- les seules requêtes qui écrivent sont la création du compte, la connexion et la déconnexion ; aucune n'agit sur un bot.
+
+Mot de passe oublié : supprime `auth/auth.json` sur le serveur, remets un code dans `.env.web`, relance `web`, recrée le compte. Double authentification et codes de récupération : prévus, pas codés.
+
+**Jamais construit ni lancé sur un serveur** : l'image n'a pas été construite, le projet n'a jamais tourné sous Linux, et l'interface n'a jamais été servie derrière un vrai Traefik ; les autres conteneurs du réseau Docker `proxy` peuvent la joindre sans passer par lui (ils n'y verraient rien sans session) (`serve` a tourné une fois en local, avec un compte jetable et les en-têtes du proxy imités). Les pages de connexion n'ont pas été vues dans un navigateur. L'application de bureau ne sait pas encore se brancher sur cette adresse : pour l'instant, un navigateur.
 
 ## Backtest : rejouer une période passée
 

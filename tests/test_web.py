@@ -177,7 +177,7 @@ def test_front_never_uses_dangerous_apis(forbidden):
 
 def test_front_only_talks_to_its_own_server_and_never_acts_on_the_bot():
     fetches = re.findall(r"fetch\(([^)]*)\)", JS)
-    assert len(fetches) == 1 and "/api/snapshot" in fetches[0]
+    assert len(fetches) == 1 and '"api/snapshot"' in fetches[0]
     assert "method:" not in fetches[0] and "POST" not in JS
     assert "<button" not in HTML and "<form" not in HTML and "<input" not in HTML
 

@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark light">
+<title>tradeagent</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="/auth.css">
+</head>
+<body>
+<main class="box">
+  <div class="brand">tradeagent</div>
+  <h1>Créer le compte administrateur</h1>
+  <p class="muted">Aucun compte n'existe encore sur ce serveur. Il n'y en aura qu'un. Le code d'installation est celui
+  que tu as écrit dans le fichier d'environnement du serveur.</p>
+  <p class="note" role="alert">{{message}}</p>
+  <form method="post" action="/setup">
+    <label>Code d'installation <input name="code" type="password" autocomplete="off" required autofocus></label>
+    <label>Identifiant <input name="user" autocomplete="username" required minlength="3" maxlength="64"></label>
+    <label>Mot de passe ({{min_password}} caractères au moins)
+      <input name="password" type="password" autocomplete="new-password" required minlength="{{min_password}}"></label>
+    <label>Mot de passe, une seconde fois
+      <input name="again" type="password" autocomplete="new-password" required minlength="{{min_password}}"></label>
+    <button type="submit">Créer le compte</button>
+  </form>
+</main>
+</body>
+</html>

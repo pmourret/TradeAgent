@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+import os
 import sys
 import time
 import webbrowser
@@ -15,7 +16,9 @@ from .app import AGENT_KINDS, PAID_KINDS, build_agent, build_engine, build_feed,
 from .backtest import (BACKTEST_AGENTS, DEFAULT_AGENTS, PAID_AGENTS, compare, format_summary, format_table, market_return_pct,
                        run_backtest, warmup_seconds)
 from .budget import InferenceBudget, day_start_ts
+from .auth import SETUP_CODE_ENV, Account
 from .config import ConfigError, load_config
+from .gateway import DEFAULT_PORT as GATEWAY_PORT, make_gateway_server
 from .envfile import load_env_file
 from .exchange import ExchangeError
 from .models import TIMEFRAME_SECONDS
@@ -30,6 +33,9 @@ from .profiles import LIVE, PROFILES, apply_profile, get_profile
 from .stopper import StdinStop
 from .storage import Storage
 from .web import DEFAULT_PORT, make_server
+
+PUBLIC_HOST_ENV = "TRADEAGENT_PUBLIC_HOST"
+AUTH_FILE_ENV = "TRADEAGENT_AUTH_FILE"
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -79,6 +85,17 @@ def _parser() -> argparse.ArgumentParser:
                      help=f"port (défaut : celui du profil, sinon {DEFAULT_PORT})")
     web.add_argument("--open", action="store_true", help="ouvre la page dans le navigateur")
 
+    serve = sub.add_parser("serve", parents=[with_config],
+                           help="interface en lecture seule pour plusieurs profils, derrière un proxy HTTPS, avec un compte "
+                                "(pour un serveur ; l'interface locale reste `web`)")
+    serve.add_argument("--profiles", default="hold,board", help="profils servis, séparés par des virgules (défaut : hold,board)")
+    serve.add_argument("--public-host", default=None, metavar="NOM",
+                       help=f"nom de domaine sous lequel le proxy sert l'interface (ou variable {PUBLIC_HOST_ENV})")
+    serve.add_argument("--bind", default="127.0.0.1",
+                       help="adresse d'écoute (défaut : 127.0.0.1 ; dans un conteneur sans port publié : 0.0.0.0)")
+    serve.add_argument("--port", type=int, default=GATEWAY_PORT, help=f"port (défaut : {GATEWAY_PORT})")
+    serve.add_argument("--auth-file", default=None, metavar="FICHIER",
+                       help=f"fichier du compte (défaut : auth.json à côté des bases, ou variable {AUTH_FILE_ENV})")
     backtest = sub.add_parser("backtest", parents=[with_config],
                               help="rejoue une période passée avec le vrai moteur et compare des stratégies (gratuit)")
     backtest.add_argument("--days", type=int, default=30, help="durée de la période rejouée, en jours (défaut : 30)")
@@ -361,6 +378,26 @@ def _backtest_llm_client(cfg, args: argparse.Namespace, history, windows: list[t
                             run_cap_eur=args.max_api_eur, total_cap_eur=cfg.llm.total_budget_eur)
 
 
+def cmd_serve(args: argparse.Namespace) -> int:
+    base = load_config(args.config)
+    names = [n.strip() for n in args.profiles.split(",") if n.strip()]
+    profiles = {name: apply_profile(base, get_profile(name)) for name in dict.fromkeys(names)}
+    public_host = args.public_host or os.environ.get(PUBLIC_HOST_ENV, "")
+    auth_file = args.auth_file or os.environ.get(AUTH_FILE_ENV) or str(Path(base.database).parent / "auth.json")
+    # Le code d'installation ne vient que de l'environnement : en argument, il se lirait dans la liste des processus.
+    server = make_gateway_server(profiles, Account(auth_file), public_host, os.environ.get(SETUP_CODE_ENV),
+                                 args.bind, args.port)
+    print(f"interface en lecture seule derrière un proxy : https://{public_host.strip().lower()}/ "
+          f"(profils : {', '.join(profiles)} ; écoute sur {args.bind}:{server.server_address[1]})")
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        print("\narrêt de l'interface")
+    finally:
+        server.server_close()
+    return 0
+
+
 def cmd_backtest(args: argparse.Namespace) -> int:
     cfg = load_config(args.config)
     agents = [a.strip() for a in args.agents.split(",") if a.strip()]
@@ -456,7 +493,7 @@ def main(argv: list[str] | None = None) -> int:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s", datefmt="%H:%M:%S")
     load_env_file(".env")
     args = _parser().parse_args(argv)
-    handlers = {"run": cmd_run, "up": cmd_up, "status": cmd_status, "resume": cmd_resume, "reset": cmd_reset, "web": cmd_web, "health": cmd_health,
+    handlers = {"run": cmd_run, "up": cmd_up, "status": cmd_status, "resume": cmd_resume, "reset": cmd_reset, "web": cmd_web, "health": cmd_health, "serve": cmd_serve,
                 "backtest": cmd_backtest}
     try:
         return handlers[args.command](args)

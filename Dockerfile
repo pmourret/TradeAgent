@@ -1,5 +1,5 @@
-# Image du backend : le bot (`tradeagent run`) et son interface en lecture seule (`tradeagent web`).
-# Une seule image, un conteneur par processus : voir compose.yaml.
+# Image du backend : les bots (`tradeagent run`) et l'interface en lecture seule derrière un proxy (`tradeagent serve`).
+# Une seule image, un conteneur par processus : voir compose.yaml. Aucun secret n'entre dans l'image.
 FROM python:3.12-slim
 
 ENV PYTHONUNBUFFERED=1 \

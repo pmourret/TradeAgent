@@ -13,8 +13,15 @@
 #   sudo mkdir -p /var/lib/docker/hiatus/tradeagent/data
 #   sudo chown 1000:1000 /var/lib/docker/hiatus/tradeagent/data
 #
-# L'interface web n'est pas encore servie ici : elle attend le mode « derrière un proxy » et l'identification
-# (invariant 10, à réécrire avec Pierre). Les bots, eux, ne sont joignables par personne : ils n'ouvrent aucun port.
+# L'interface (service `web`) n'est atteinte que par Traefik, en HTTPS, et demande un compte :
+#   sudo mkdir -p /var/lib/docker/hiatus/tradeagent/auth
+#   sudo chown 1000:1000 /var/lib/docker/hiatus/tradeagent/auth
+#   nano .env.web         # une ligne : TRADEAGENT_SETUP_CODE=un-code-que-tu-choisis   (12 caractères au moins)
+#   chmod 600 .env.web
+# À la première visite, la page demande ce code pour créer le compte administrateur (un seul, une seule fois).
+# Ensuite le code ne sert plus : vide .env.web puis `docker compose up -d web`, qui recrée le conteneur sans lui.
+# Ne mets rien d'autre dans .env.web : c'est le conteneur le plus exposé. Aucun port n'est publié sur le serveur,
+# ni pour l'interface ni pour les bots ; l'interface n'est jointe que par le réseau Docker `proxy`.
 
 x-bot: &bot
     build: .
@@ -57,6 +64,52 @@ services:
             retries: 2
             start_period: 2m
 
+    web:
+        build: .
+        image: tradeagent:latest
+        container_name: tradeagent-web
+        restart: unless-stopped
+        init: true
+        stop_signal: SIGINT
+        command: ["serve", "--profiles", "hold,board", "--bind", "0.0.0.0"]
+        env_file:
+            - path: .env.web            # TRADEAGENT_SETUP_CODE, pour la création du compte seulement
+              required: false
+        mem_limit: 256m                 # l'interface ne doit jamais affamer les bots
+        cap_drop:
+            - ALL
+        security_opt:
+            - no-new-privileges:true
+        environment:
+            TRADEAGENT_PUBLIC_HOST: trade.sternum-lab.duckdns.org
+            TRADEAGENT_AUTH_FILE: /app/auth/auth.json
+        volumes:
+            # Les bases des bots en LECTURE SEULE : même une faille de l'interface ne pourrait pas les modifier.
+            - /var/lib/docker/hiatus/tradeagent/data:/app/data:ro
+            # Le compte (empreinte du mot de passe, clé des sessions) : seul dossier où l'interface écrit.
+            - /var/lib/docker/hiatus/tradeagent/auth:/app/auth
+        healthcheck:
+            test: ["CMD", "python", "-c", "import os,urllib.request as u; u.urlopen(u.Request('http://127.0.0.1:8080/healthz', headers={'Host': os.environ['TRADEAGENT_PUBLIC_HOST']}), timeout=5)"]
+            interval: 1m
+            timeout: 10s
+            retries: 3
+        networks:
+            - proxy
+        labels:
+            - traefik.enable=true
+            - traefik.docker.network=proxy
+            - traefik.http.routers.tradeagent.rule=Host(`trade.sternum-lab.duckdns.org`)
+            - traefik.http.routers.tradeagent.entrypoints=websecure
+            - traefik.http.routers.tradeagent.tls.certresolver=duckdns
+            - traefik.http.services.tradeagent.loadbalancer.server.port=8080
+        logging:
+            driver: json-file
+            options:
+                max-size: "10m"
+                max-file: "5"
+
 networks:
+    proxy:
+        external: true
     backend:
         external: true

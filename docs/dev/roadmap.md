@@ -50,6 +50,34 @@ La ligne `llm` vient d'un lancement fait quelques heures plus tôt : la fenêtre
 5. **Trois choix de conception du superviseur faits par Claude, jamais validés** : les multiplicateurs de posture (×2, ×1, ×0,5, tout vendre) ; un appel raté du superviseur n'est pas compté par le kill switch (une panne durable de l'API ne met pas le bot en `halted`, il continue comme `quant`) ; l'agent lit lui-même les flux publics au lieu de les recevoir du moteur.
 6. **Les idées de Pierre**, à recueillir en début de session : elles passent avant cette liste.
 
+### Décisions du 2026-10-05 (session de réflexion, aucun code écrit)
+
+Idées de Pierre : un « board » de trading en pyramide (un superviseur au sommet, des sous-agents quant en dessous), la rentabilité d'abord, puis le clonage avec des facteurs auto-générés. Décidé avec lui (détail dans `decisions.md`) :
+
+- **Question 1 tranchée** : pas de LLM dans la décision pour l'instant. Le board est un agent composite : plusieurs sous-agents quant émettent des positions cibles, un seul portefeuille les additionne. Le sommet répartit le capital par une règle codée ; un LLM (local) à cette place ne sera essayé que si la mesure du levier « répartition » le justifie.
+- **Clonage** : sélection des variantes en paper et en direct d'abord, capital aux survivantes ensuite.
+- **Règle de mort** : fin de vie si l'agent ne peut plus réinvestir ou s'il est déficitaire. Seuils à définir (voir plus bas).
+- **Question 2** : le contrôle de `quant` sur les mois d'octobre 2025 à mars 2026 est accepté sur le principe. Critères de réussite à écrire et à valider par Pierre **avant** le lancement ; pas encore lancé.
+
+Ordre retenu : (1) contrôle de `quant`, une seule fois, critères écrits d'avance ; (2) seuils de la règle de mort ; (3) un deuxième sous-agent quant et l'agent composite, avec la mesure du levier « répartition » (répartition égale contre meilleure répartition après coup) ; (4) profil pour faire tourner la population en paper ; (5) dépôts et réinvestissement (question 4, toujours ouverte). Les questions 3 et 5 restent ouvertes.
+
+**Seuils de la règle de mort, validés par Pierre le 2026-10-05 (à affiner après les essais à blanc, pas encore codés)** : mort rapide inchangée (−40 % depuis le plus haut ou −50 % de la mise) ; « déficitaire » = equity sous la mise à la fin d'une fenêtre de 90 jours **et** résultat inférieur à celui de `buyhold` sur la même fenêtre (variante retenue par Pierre après le contrôle), jugée à partir du 90e jour de vie ; « ne peut plus réinvestir » = achats bloqués par le palier défensif pendant 30 jours d'affilée. Remplace « un bot à l'arrêt sans issue ne meurt pas tout seul ». Touche l'invariant 2 : à relire et à tester par mutation au moment du code.
+
+**Critères du contrôle de `quant`, écrits avant de regarder (validés par Pierre le 2026-10-05).** Commande : `backtest --months 6 --end 2026-03-08 --agents hold,buyhold,quant`, code et config au commit `b9704e8`. Repère : sur les sept mois de réglage, `quant` a capté 52 % du gain de `buyhold` ; un simple `buyhold` peu investi capterait aussi environ 52 % de ses pertes.
+
+- Réussite : pire mois au-dessus de −5 %, et cumul positif ou nul ; si `buyhold` est en perte, `quant` perd au plus un tiers de cette perte.
+- Échec : pire mois sous −5 %, ou `quant` perd plus de la moitié de ce que perd `buyhold`.
+- Entre les deux : pas de conclusion.
+- Suite décidée d'avance : réussite, on bâtit le board sur `quant` ; échec, on réexamine le modèle de tendance avant tout board. Dans tous les cas, aucun réglage sur ces six mois, et ils ne servent plus jamais de contrôle. Ces critères ne s'affinent pas après coup.
+
+**Résultat du contrôle (lancé une fois, le 2026-10-05, du 2025-09-09 au 2026-03-08, paper).** Marché en forte baisse : `buyhold` −19,87 EUR (−39,75 % en somme, 3 mois positifs sur 6, pire mois −31,62 %). `quant` −0,43 EUR (−0,86 %, 2 mois positifs sur 6, pire mois −4,46 %, 50 ordres, 1,25 EUR de frais). `hold` 0.
+
+- Verdict : **réussite** au sens où le critère a été conçu (pire mois au-dessus de −5 % ; `buyhold` en perte et `quant` perd 2 % de cette perte, loin sous le tiers). Réserve honnête : la phrase du critère était ambiguë ; lue strictement (« cumul positif ou nul » exigé), c'est « pas de conclusion », car `quant` finit 0,43 EUR sous `hold`. Ce n'est un échec dans aucune lecture.
+- Ce que cela montre : `quant` captait 52 % des gains de `buyhold` sur les mois de réglage et 2 % de ses pertes ici. Ce n'est donc pas un simple `buyhold` peu investi : il sort quand le marché baisse.
+- Ses faiblesses, vues ici : il ne gagne rien dans une baisse (il ne peut pas, au comptant) et il rate le rebond (dernier mois : `buyhold` +7,12 %, `quant` −0,67 %).
+- Conséquence pour la règle de mort : sur les trois premiers mois du contrôle `quant` cumule environ −1,14 EUR. La règle « déficitaire à 90 jours » l'aurait sans doute tué alors qu'il protégeait la mise dans un marché à −40 %. Décidé avec Pierre le même jour : le déficit se juge aussi contre `buyhold` (voir les seuils plus haut).
+- Ces six mois ne servent plus de contrôle. Le prochain hors-échantillon est le paper en direct.
+
 ### Ce qui n'a jamais été vérifié pour de vrai
 
 Le superviseur et les flux en direct dans un `run` ; l'heure de publication de l'indice Fear & Greed et l'unité du taux de financement (observées sur les données, documentées nulle part) ; le calendrier macro hors de 2026 (il se tait) ; aucun mode réel n'existe. Le détail est dans `etat.md`.

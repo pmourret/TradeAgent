@@ -23,6 +23,7 @@ from dataclasses import dataclass
 
 from .agents import Agent, ChaosAgent, HoldAgent
 from .app import build_engine
+from .board import BoardAgent, TrendSleeve
 from .budget import InferenceBudget
 from .config import Config, ConfigError
 from .context import ContextSource
@@ -36,7 +37,7 @@ from .storage import Storage
 from .strategies import STRATEGIES
 from .supervisor import SupervisedAgent
 
-BACKTEST_AGENTS = ("hold", "buyhold", "dca", "momentum", "quant", "chaos", "llm-fake", "llm", "supervisor")
+BACKTEST_AGENTS = ("hold", "buyhold", "dca", "momentum", "quant", "board", "chaos", "llm-fake", "llm", "supervisor")
 PAID_AGENTS = ("llm", "supervisor")     # ceux qui appellent le vrai LLM : argent réel, plafond obligatoire
 DEFAULT_AGENTS = ("hold", "buyhold", "dca", "momentum", "quant", "chaos")
 STOPPED = ("dead", "halted", "stopped")
@@ -80,6 +81,8 @@ def _build_agent(kind: str, cfg: Config, storage: Storage, clock: SimClock, seed
         return ChaosAgent(seed=seed)
     if kind in STRATEGIES:
         return STRATEGIES[kind]()
+    if kind == "board":
+        return BoardAgent([TrendSleeve()])
     if kind == "llm-fake":
         return LLMAgent(cfg, FakeLLMClient(seed=seed), InferenceBudget(cfg.llm, storage, clock), storage, clock)
     if kind in PAID_AGENTS:

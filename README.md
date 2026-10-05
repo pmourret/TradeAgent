@@ -176,6 +176,7 @@ Le backtest fait tourner **le vrai moteur** : mêmes garde-fous, même kill swit
 | `dca` | Achats programmés : 10 % de la mise par jour, en alternant les symboles, sans regarder le prix |
 | `momentum` | Suivi de tendance : achète ce qui a pris plus de 2 % en 24 h, vend ce qui baisse sur 24 h |
 | `quant` | Le témoin : trade sur les signaux des modèles mathématiques, sans LLM donc sans loyer. Achète une tendance haussière à la taille du modèle de risque, sort quand la tendance se retourne ou que son niveau de sortie (qui suit le prix à la hausse) est touché |
+| `board` | Le board : des sous-agents tiennent chacun ce qu'ils veulent détenir, un seul portefeuille additionne ces cibles et trade l'écart, un ordre par cycle, les ventes d'abord. Pour l'instant un seul sous-agent, le suivi de tendance de `quant` : les deux lignes doivent donc se ressembler. Pas dans la liste par défaut : `--agents quant,board` |
 | `chaos` | Aléatoire : montre ce que coûtent les frais quand on trade sans raison |
 | `supervisor` | **Payant** (vrai LLM, comme `llm`). Le témoin `quant` trade, le LLM règle le niveau de risque environ une fois par jour, avec les flux d'information. À comparer à `quant` : la différence, c'est ce que le LLM apporte ou coûte |
 | `llm-fake` | Faux LLM (décisions aléatoires) : vérifie que les coûts d'API entrent bien dans le résultat net |

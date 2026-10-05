@@ -31,6 +31,7 @@ Tout ce qui suit est du **paper trading** : l'argent est fictif. Le seul coût r
 | `hold` (défaut) | réels (publics, sans clé) | ne fait rien : **la référence à battre** | aucun | 8765 |
 | `llm` | réels | Claude (Anthropic) | l'API, plafonnée par le code (0,25 €/jour, 10 € au total par défaut) | 8766 |
 | `demo` | simulés, hors ligne | aléatoire, un cycle toutes les 2 s | aucun | 8767 |
+| `board` | réels (publics, sans clé) | le board : des sous-agents sans LLM (aujourd'hui le seul suivi de tendance) sur un seul portefeuille | aucun | 8768 |
 
 Chaque profil a sa propre vie : sa base (`data/paper-<profil>.db`), son argent fictif, son kill switch, son journal. Ils ne se mélangent jamais, ce qui permet de lancer `hold` et `llm` en même temps. Un seul bot peut tourner par profil : un second est refusé avec un message clair.
 
@@ -176,7 +177,7 @@ Le backtest fait tourner **le vrai moteur** : mêmes garde-fous, même kill swit
 | `dca` | Achats programmés : 10 % de la mise par jour, en alternant les symboles, sans regarder le prix |
 | `momentum` | Suivi de tendance : achète ce qui a pris plus de 2 % en 24 h, vend ce qui baisse sur 24 h |
 | `quant` | Le témoin : trade sur les signaux des modèles mathématiques, sans LLM donc sans loyer. Achète une tendance haussière à la taille du modèle de risque, sort quand la tendance se retourne ou que son niveau de sortie (qui suit le prix à la hausse) est touché |
-| `board` | Le board : des sous-agents tiennent chacun ce qu'ils veulent détenir, un seul portefeuille additionne ces cibles et trade l'écart, un ordre par cycle, les ventes d'abord. Pour l'instant un seul sous-agent, le suivi de tendance de `quant` : les deux lignes doivent donc se ressembler. Pas dans la liste par défaut : `--agents quant,board` |
+| `board` | Le board : des sous-agents tiennent chacun ce qu'ils veulent détenir, un seul portefeuille additionne ces cibles et trade l'écart, un ordre par cycle, les ventes d'abord. Pour l'instant un seul sous-agent, le suivi de tendance de `quant` : les deux lignes doivent donc se ressembler. Pas dans la liste par défaut : `--agents quant,board`. C'est aussi l'agent du profil `board`, qui tourne en direct : son état (ce que chaque sous-agent réclame, ses niveaux de sortie) est gardé en base, survit à un redémarrage, est effacé par `reset`, et s'affiche sous le portefeuille dans l'interface. Une position que plus aucun sous-agent ne réclame (état effacé ou abîmé) est vendue dès qu'elle vaut au moins l'ordre minimal ; en dessous elle est invendable et reste là |
 | `chaos` | Aléatoire : montre ce que coûtent les frais quand on trade sans raison |
 | `supervisor` | **Payant** (vrai LLM, comme `llm`). Le témoin `quant` trade, le LLM règle le niveau de risque environ une fois par jour, avec les flux d'information. À comparer à `quant` : la différence, c'est ce que le LLM apporte ou coûte |
 | `llm-fake` | Faux LLM (décisions aléatoires) : vérifie que les coûts d'API entrent bien dans le résultat net |

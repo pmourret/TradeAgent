@@ -186,7 +186,7 @@ def test_web_reads_the_database_of_the_profile(project, capsys, monkeypatch):
 
 def test_the_profile_ports_are_the_ones_the_ui_scripts_advertise():
     ports = {p.name: p.port for p in PROFILES.values()}
-    assert ports == {"hold": 8765, "llm": 8766, "demo": 8767}
+    assert ports == {"hold": 8765, "llm": 8766, "demo": 8767, "board": 8768}
 
 
 # -- up ---------------------------------------------------------------------------------------------------------------

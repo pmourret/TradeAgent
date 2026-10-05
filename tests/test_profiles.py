@@ -27,6 +27,12 @@ def test_profiles_only_use_known_agents_and_feeds(profile):
     assert profile.description
 
 
+def test_the_board_profile_is_free_and_has_its_own_database():
+    board = get_profile("board")
+    assert board.agent == "board" and board.feed == "ccxt" and not board.costs_money and board.cycle_seconds is None
+    assert database_for(default_cfg(), board).endswith("paper-board.db")
+
+
 def test_the_offline_profile_never_touches_the_network_or_the_paid_api():
     demo = get_profile("demo")
     assert demo.feed == "synthetic" and demo.agent != "llm" and not demo.costs_money

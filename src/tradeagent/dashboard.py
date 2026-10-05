@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Any
 
 from .advice import idle_advice
+from .board import STATE_KEY as BOARD_STATE_KEY, clean_state
 from .budget import day_start_ts
 from .config import Config
 from .portfolio import base_currency
@@ -158,10 +159,12 @@ def _fill(snap: dict[str, Any], db: sqlite3.Connection, cfg: Config, now: float)
     for f in fills:
         f["notional"] = f["quantity"] * f["price"]
     latest_decision = _rows(db, "SELECT agent FROM decisions ORDER BY id DESC LIMIT 1")
+    agent = latest_decision[0]["agent"] if latest_decision else None
+    board_state = _kv(db, BOARD_STATE_KEY)
 
     snap.update({
         "has_data": True,
-        "agent": latest_decision[0]["agent"] if latest_decision else None,
+        "agent": agent,
         "status": {"state": ks["status"], "reason": ks.get("reason", ""), "since": ks.get("ts")},
         "risk_tier": _kv(db, "risk_tier", "normal"),
         "life": {"stake": stake, "started": started},
@@ -185,6 +188,9 @@ def _fill(snap: dict[str, Any], db: sqlite3.Connection, cfg: Config, now: float)
         # Agent à l'arrêt : bilan et conseil pour l'utilisateur, qui décide. Texte fabriqué par le code, jamais par l'agent.
         "advice": idle_advice(str(idle["cause"]), stake, equity, spent_life, ccy) if idle.get("cause") else None,
         "positions": positions,
+        # Ce que réclament les sous-agents du board (None pour tout autre agent). Aucun texte de la base n'y passe :
+        # des nombres, le nom du sous-agent (fixé par le code) et des symboles de la config.
+        "board": _board_claims(board_state, quotes, cfg.symbols) if agent == "board" else None,
         "equity_series": downsample(series),
         "api": {
             "provider": cfg.llm.provider, "model": cfg.llm.model,
@@ -210,6 +216,24 @@ def _fill(snap: dict[str, Any], db: sqlite3.Connection, cfg: Config, now: float)
         },
     })
     return snap
+
+
+def _board_claims(stored: Any, quotes: dict[str, Any], symbols: tuple[str, ...] | list[str]) -> list[dict[str, Any]]:
+    """Une ligne par position réclamée : le sous-agent, la quantité, le niveau de sortie et la marge avant ce niveau."""
+    claims = []
+    for sleeve, part in clean_state(stored).items():
+        for symbol in symbols:
+            quantity = part["qty"].get(symbol)
+            if quantity is None:
+                continue
+            price, stop = quotes.get(symbol), part["stops"].get(symbol)
+            price = float(price) if isinstance(price, (int, float)) and not isinstance(price, bool) and price > 0 else None
+            claims.append({
+                "sleeve": sleeve, "symbol": symbol, "quantity": quantity, "stop": stop,
+                "value": quantity * price if price is not None else None,
+                "stop_margin_pct": (price / stop - 1) * 100 if price is not None and stop else None,
+            })
+    return claims
 
 
 def _net_series(db: sqlite3.Connection, started: float) -> list[list[float]]:

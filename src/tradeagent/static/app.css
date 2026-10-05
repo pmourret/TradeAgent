@@ -118,6 +118,9 @@ p { margin: 0; }
 .positions { min-width: 460px; }
 .positions .thead, .positions .trow { grid-template-columns: 1.3fr 1fr 1fr 1fr 0.7fr; }
 .positions .trow { font-family: var(--mono); font-size: 13.5px; font-variant-numeric: tabular-nums; }
+.claims { min-width: 460px; }
+.claims .thead, .claims .trow { grid-template-columns: 1fr 1fr 1fr 1fr 1fr 0.7fr; }
+.claims .trow { font-family: var(--mono); font-size: 13.5px; font-variant-numeric: tabular-nums; }
 .asset { display: flex; align-items: center; gap: 8px; font-family: var(--font); font-weight: 500; }
 .swatch { width: 10px; height: 10px; border-radius: 3px; flex: none; }
 .alloc { display: flex; height: 12px; border-radius: 6px; overflow: hidden; gap: 2px; }

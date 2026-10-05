@@ -1,7 +1,7 @@
 #!/usr/bin/env sh
 # L'interface web seule (lecture seule, locale), pour regarder un bot lancé ailleurs. Ctrl+C pour arrêter.
 #
-#   scripts/ui.sh [hold|llm|demo]      ports : hold 8765, llm 8766, demo 8767
+#   scripts/ui.sh [hold|llm|demo|board]      ports : hold 8765, llm 8766, demo 8767, board 8768
 #
 # Pour lancer bot ET interface d'un coup : scripts/start.sh
 set -eu

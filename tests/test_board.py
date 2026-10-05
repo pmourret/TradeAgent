@@ -1,16 +1,20 @@
 """Le board : des sous-agents qui tiennent des cibles, un seul portefeuille qui trade l'écart."""
 from __future__ import annotations
 
+import json
 import math
 
 import pytest
 
 from tradeagent.agents import MarketView
 from tradeagent.backtest import BACKTEST_AGENTS, run_backtest, warmup_seconds
-from tradeagent.board import BoardAgent, TrendSleeve
+from tradeagent.app import AGENT_KINDS, LIFE_KEYS, build_agent, reset_life
+from tradeagent.board import STATE_KEY, BoardAgent, TrendSleeve, clean_state, stored_board
 from tradeagent.models import BUY, HOLD, SELL, Candle
 
-from helpers import default_cfg
+from tradeagent.storage import Storage
+
+from helpers import default_cfg, make_engine
 
 LIMITS = {"max_order_quote": 10.0, "max_position_quote_per_symbol": 20.0, "max_total_exposure_quote": 40.0,
           "min_order_quote": 5.0, "buys_left_today": 10, "buys_blocked_below_equity": 47.5}
@@ -352,6 +356,146 @@ def test_l_ordre_des_symboles_ne_depend_pas_de_l_ordre_du_dictionnaire():
     assert BoardAgent([FixedSleeve("a")]).decide(reversed_view(10.0)).symbol == BTC         # vente
     wants = FixedSleeve("a", enter={BTC: 10.0 / 60_000.0, ETH: 0.004})
     assert BoardAgent([wants]).decide(reversed_view(0.0)).symbol == BTC                     # achat
+
+
+# -- l'état en base (tradeagent run) -----------------------------------------------------
+def test_l_etat_survit_a_un_redemarrage_avec_ses_niveaux_de_sortie():
+    storage = Storage(":memory:")
+    assert "board" in AGENT_KINDS and build_agent("board", default_cfg(), storage).name == "board"
+    build_agent("board", default_cfg(), storage).decide(view(size_pct=12.0))    # celui de `run` écrit bien en base
+    assert storage.get(STATE_KEY)["trend"]["qty"][BTC] == pytest.approx(6.0 / 60_000.0)
+    storage.delete(STATE_KEY)
+    stored_board(storage).decide(view())                                        # entrée à 60 000, sortie à 57 000
+    saved = storage.get(STATE_KEY)
+    assert saved["trend"]["qty"][BTC] == pytest.approx(10.0 / 60_000.0) and saved["trend"]["stops"][BTC] == 57_000.0
+    restarted = stored_board(storage)                                           # un autre processus, la même base
+    assert restarted.decide(view(btc_value=10.0)).action == HOLD
+    late = stored_board(storage)                                                # le prix est passé sous le niveau pendant l'arrêt
+    sell = late.decide(view(btc_qty=10.0 / 60_000.0, btc_price=56_000.0))
+    assert sell.action == SELL and "niveau de sortie" in sell.reasoning
+    assert storage.get(STATE_KEY)["trend"]["qty"] == {}
+
+
+def test_l_etat_est_ecrit_a_la_decision_et_un_achat_jamais_execute_est_rendu_apres_redemarrage():
+    storage = Storage(":memory:")
+    assert stored_board(storage).decide(view()).action == BUY                   # décidé, écrit... et le bot s'arrête là
+    assert BTC in storage.get(STATE_KEY)["trend"]["qty"]
+    again = stored_board(storage).decide(view(regime="range"))                  # rien n'a été acheté, plus de signal
+    assert again.action == HOLD and storage.get(STATE_KEY)["trend"]["qty"] == {}
+
+
+def test_l_etat_n_est_reecrit_que_s_il_change():
+    writes = []
+
+    class Spy:
+        def get(self, key):
+            return None
+
+        def set(self, key, value):
+            writes.append((key, json.loads(json.dumps(value))))
+
+    agent = stored_board(Spy())
+    agent.decide(view(regime="range"))
+    assert writes == []                                                         # rien à retenir : rien d'écrit
+    agent.decide(view())
+    assert [key for key, _ in writes] == [STATE_KEY]
+    agent.decide(view(btc_value=10.0))                                          # la cible suit ce qui a été obtenu : pareil ici
+    agent.decide(view(btc_value=10.0))
+    assert len(writes) == 1
+
+
+def test_une_ecriture_ratee_est_retentee_au_cycle_suivant():
+    class Flaky:
+        def __init__(self):
+            self.fail, self.stored = True, None
+
+        def get(self, key):
+            return None
+
+        def set(self, key, value):
+            if self.fail:
+                raise RuntimeError("database is locked")
+            self.stored = json.loads(json.dumps(value))
+
+    storage = Flaky()
+    agent = stored_board(storage)
+    with pytest.raises(RuntimeError):
+        agent.decide(view())                                                    # l'entrée est décidée, l'écriture échoue
+    storage.fail = False
+    agent.decide(view(btc_value=10.0))                                          # rien ne change ce cycle-ci...
+    assert storage.stored["trend"]["stops"][BTC] == 57_000.0                    # ...mais la base est enfin à jour
+
+
+def test_une_erreur_en_cours_de_decision_n_empeche_pas_de_garder_ce_qui_a_change():
+    class Broken(TrendSleeve):
+        def update(self, view, may_enter):
+            super().update(view, may_enter)
+            raise RuntimeError("bug")
+
+    saved = []
+    state = clean_state(None)
+    agent = BoardAgent([Broken(state["trend"])], state, lambda s: saved.append(json.loads(json.dumps(s))))
+    with pytest.raises(RuntimeError):
+        agent.decide(view())
+    assert saved and BTC in saved[-1]["trend"]["qty"]
+
+
+def test_un_board_avec_un_etat_mais_sans_base_decide_sans_rien_ecrire():
+    state = clean_state(None)
+    agent = BoardAgent([TrendSleeve(state["trend"])], state)
+    assert agent.decide(view()).action == BUY and BTC in state["trend"]["qty"]
+
+
+def test_reset_efface_l_etat_du_board():
+    storage = Storage(":memory:")
+    stored_board(storage).decide(view())
+    assert STATE_KEY in LIFE_KEYS
+    reset_life(storage, 0.0)
+    assert storage.get(STATE_KEY) is None and stored_board(storage).decide(view(regime="range")).action == HOLD
+
+
+@pytest.mark.parametrize("damaged", [None, "texte", 3, [], {"trend": "x"}, {"trend": {"qty": [1]}}, {"autre": {}},
+                                     {"trend": {"notes": [1], "stops": "x"}}])
+def test_un_etat_abime_est_ecarte_sans_erreur(damaged):
+    assert clean_state(damaged) == {"trend": {"qty": {}, "stops": {}, "notes": {}}}
+
+
+def test_seuls_les_nombres_finis_positifs_et_les_textes_sont_gardes():
+    nan, inf = float("nan"), float("inf")
+    cleaned = clean_state({"trend": {
+        "qty": {BTC: 0.5, ETH: nan, "A": -1, "B": 0, "C": True, "D": "2", "E": inf, 7: 1.0, "G": 10 ** 400},
+        "stops": {BTC: 57_000, ETH: 2_000.0, "Z": 5.0, "F": nan},
+        "notes": {BTC: "x" * 500, ETH: 3, 7: "y"},
+        "inconnu": 1,
+    }})["trend"]
+    assert cleaned["qty"] == {BTC: 0.5}
+    assert cleaned["stops"] == {BTC: 57_000.0}                                  # un niveau sans position ne sert à rien
+    assert cleaned["notes"] == {BTC: "x" * 200}
+
+
+def test_une_position_dont_l_etat_est_perdu_est_vendue():
+    storage = Storage(":memory:")
+    storage.set(STATE_KEY, {"trend": {"qty": {BTC: "abîmé"}, "stops": {BTC: 57_000.0}}})
+    sell = stored_board(storage).decide(view(btc_value=10.0, regime="range"))
+    assert (sell.action, sell.symbol, sell.amount_quote) == (SELL, BTC, 10.0)
+
+
+def test_sur_le_vrai_moteur_l_etat_suit_ce_qui_a_ete_execute_et_passe_le_redemarrage():
+    cfg = default_cfg()
+    storage = Storage(":memory:")
+    engine, feed, clock, storage = make_engine(cfg, stored_board(storage), storage=storage)
+    up = {"trend": {"regime": "up", "score": 1.0}, "risk": {"exit_pct": 5.0, "size_pct": 10.0}}
+    engine._market_summary = lambda now: {s: {"models": up} for s in cfg.symbols}
+    engine.run_cycle()
+    clock.advance(900)
+    engine.run_cycle()
+    held = storage.get("paper_balances")["BTC"]
+    assert held > 0 and storage.get(STATE_KEY)["trend"]["qty"][BTC] == pytest.approx(held)     # la cible = l'exécuté
+    engine2, _, _, _ = make_engine(cfg, stored_board(storage), clock=clock, feed=feed, storage=storage)
+    engine2._market_summary = lambda now: {s: {"models": {"trend": {"regime": "down"}, "risk": up["risk"]}} for s in cfg.symbols}
+    before = storage.count("fills")
+    engine2.run_cycle()
+    assert storage.count("fills") == before + 1 and storage.get("paper_balances").get("BTC", 0.0) == 0.0
 
 
 # -- sur le vrai moteur ------------------------------------------------------------------

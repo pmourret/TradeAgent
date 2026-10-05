@@ -22,17 +22,25 @@ est laissée là : elle sera vendue le jour où elle repasse le minimum, ou comp
 Les seuils se jugent sur la valeur exacte (quantité fois prix), comme le font les garde-fous, et non sur la valeur
 arrondie de la vue : sinon une position à un demi-centime du minimum serait redemandée et refusée à chaque cycle.
 
-État en mémoire : le board ne sert pour l'instant qu'au backtest.
+État : un dictionnaire par sous-agent. En backtest il reste en mémoire ; en `run`, `stored_board` le relit de la
+base au démarrage (clé `board_state`, effacée par `reset`) et l'y réécrit à chaque changement. Il est écrit au
+moment de la décision, avant l'ordre : si le bot s'arrête entre les deux, le cycle suivant constate que la
+position n'est pas là et rend la cible au sous-agent.
 """
 from __future__ import annotations
 
-from typing import Protocol
+import json
+import math
+from typing import Any, Callable, Protocol
 
 from .agents import MarketView
 from .models import BUY, HOLD, SELL, Decision
 from .strategies import buy_room
 
 FILL_TOLERANCE = 0.95   # détenir au moins 95 % de la cible, c'est l'avoir obtenue (frais, glissement, arrondi)
+STATE_KEY = "board_state"   # {sous-agent: {qty, stops, notes}} : dans LIFE_KEYS (`app.py`), une vie = un état
+SLEEVE_NAMES = ("trend",)
+MAX_NOTE_CHARS = 200
 
 
 def exact_value(position: dict[str, float]) -> float:
@@ -142,10 +150,15 @@ class BoardAgent:
 
     name = "board"
 
-    def __init__(self, sleeves: list[Sleeve]) -> None:
+    def __init__(self, sleeves: list[Sleeve], state: dict | None = None,
+                 save: Callable[[dict], None] | None = None) -> None:
+        """`state` et `save` : l'état que se partagent les sous-agents, et de quoi le garder quand il change."""
         if not sleeves:
             raise ValueError("un board sans sous-agent ne peut rien décider")
         self._sleeves = list(sleeves)
+        self._state = state
+        self._save = save
+        self._saved = json.dumps(state, sort_keys=True)     # ce que la base contient, pas ce qu'on a voulu y écrire
 
     def _wanted(self, symbol: str) -> float:
         return sum(max(0.0, sleeve.wanted().get(symbol, 0.0)) for sleeve in self._sleeves)
@@ -175,6 +188,19 @@ class BoardAgent:
         return None
 
     def decide(self, view: MarketView) -> Decision:
+        if self._save is None:
+            return self._decide(view)
+        try:
+            return self._decide(view)
+        finally:
+            # Comparé à la dernière écriture RÉUSSIE : une écriture ratée (ou une erreur en route) est retentée au
+            # cycle suivant, sinon un redémarrage relirait un état plus ancien, avec un niveau de sortie plus bas.
+            current = json.dumps(self._state, sort_keys=True)
+            if current != self._saved:
+                self._save(self._state)
+                self._saved = current
+
+    def _decide(self, view: MarketView) -> Decision:
         minimum = view.limits.get("min_order_quote", 0.0)
         floor = max(minimum, 0.01)
         for symbol, position in view.positions.items():     # ce qui a été demandé mais pas obtenu est rendu
@@ -198,3 +224,40 @@ class BoardAgent:
             if amount >= minimum and amount > 0:
                 return Decision(BUY, symbol, amount, self._why(symbol, leaving=False))
         return Decision(HOLD, reasoning="board: pas d'écart à traiter")
+
+
+def _positive(value: Any) -> float | None:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    try:
+        number = float(value)
+    except OverflowError:       # un entier démesuré dans le JSON
+        return None
+    return number if math.isfinite(number) and number > 0 else None
+
+
+def clean_state(stored: Any) -> dict[str, dict[str, dict]]:
+    """L'état relu de la base : tout ce qui n'a pas la forme attendue est écarté, jamais une erreur.
+
+    Une quantité qui n'est pas un nombre fini positif disparaît, avec son niveau de sortie : la position, si elle
+    existe, n'est alors plus réclamée par personne, et le board la vend.
+    """
+    stored = stored if isinstance(stored, dict) else {}
+    out: dict[str, dict[str, dict]] = {}
+    for name in SLEEVE_NAMES:
+        part = stored.get(name) if isinstance(stored.get(name), dict) else {}
+        numbers = {key: {s: n for s, v in part[key].items() if isinstance(s, str) and (n := _positive(v)) is not None}
+                   if isinstance(part.get(key), dict) else {} for key in ("qty", "stops")}
+        notes = part.get("notes") if isinstance(part.get("notes"), dict) else {}
+        out[name] = {
+            "qty": numbers["qty"],
+            "stops": {s: v for s, v in numbers["stops"].items() if s in numbers["qty"]},
+            "notes": {s: v[:MAX_NOTE_CHARS] for s, v in notes.items() if isinstance(s, str) and isinstance(v, str)},
+        }
+    return out
+
+
+def stored_board(storage: Any) -> BoardAgent:
+    """Le board de `tradeagent run` : son état vit dans la base du profil."""
+    state = clean_state(storage.get(STATE_KEY))
+    return BoardAgent([TrendSleeve(state["trend"])], state, lambda current: storage.set(STATE_KEY, current))

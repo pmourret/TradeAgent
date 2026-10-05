@@ -43,6 +43,8 @@ PROFILES: dict[str, Profile] = {
                    description="Vrais prix + vrai LLM Anthropic. Argent fictif, mais l'API est facturée."),
     "demo": Profile("demo", agent="chaos", feed="synthetic", port=8767, cycle_seconds=2.0,
                     description="Hors ligne : prix simulés, agent aléatoire, un cycle toutes les 2 s. Pour voir l'interface s'animer."),
+    "board": Profile("board", agent="board", feed="ccxt", port=8768,
+                     description="Vrais prix, le board trade sur les modèles du code, sans LLM. Aucun coût."),
 }
 
 

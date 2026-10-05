@@ -339,6 +339,25 @@
     }
   }
 
+  function renderBoard(s) {
+    const box = $("boardBox"), rows = $("boardRows");
+    box.hidden = !s.board;
+    clear(rows);
+    if (!s.board) return;
+    const qty = new Intl.NumberFormat("fr-FR", { minimumFractionDigits: 0, maximumFractionDigits: 6 });
+    $("boardNote").textContent = s.board.length ? "" : "Aucune position réclamée : le board attend un signal.";
+    for (const c of s.board) {
+      const row = el("div", "trow");
+      row.appendChild(el("span", null, c.sleeve));
+      row.appendChild(el("span", null, c.symbol));
+      row.appendChild(el("span", "r", qty.format(c.quantity)));
+      row.appendChild(el("span", "r", c.value === null ? "—" : money(c.value)));
+      row.appendChild(el("span", "r", c.stop === null ? "—" : money(c.stop, c.stop >= 1000 ? 0 : 2)));
+      row.appendChild(el("span", "r", c.stop_margin_pct === null ? "—" : signed(c.stop_margin_pct, 1) + " %"));
+      rows.appendChild(row);
+    }
+  }
+
   function renderApi(s) {
     const a = s.api;
     $("apiCadence").textContent = a.calls_life > 0 || s.agent === "llm" ? "1 appel toutes les " + dur(a.call_every_seconds) : "";
@@ -491,6 +510,7 @@
     renderGauge(s, v.tone);
     renderDay(s);
     renderPositions(s);
+    renderBoard(s);
     renderApi(s);
     renderJournal(s);
     renderEvents(s);

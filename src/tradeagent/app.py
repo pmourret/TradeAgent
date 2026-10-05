@@ -5,6 +5,7 @@ import time
 from typing import Callable
 
 from .agents import Agent, ChaosAgent, HoldAgent
+from .board import STATE_KEY as BOARD_STATE_KEY, stored_board
 from .budget import InferenceBudget
 from .config import Config, ConfigError
 from .context import LiveContext
@@ -22,10 +23,11 @@ from .supervisor import DIRECTIVE_SCHEMA, SupervisedAgent
 # `llm_wake`, `llm_idle` et `llm_plan` : le sommeil, l'arrêt et les plans de sortie de l'agent appartiennent à la
 # vie qui les a décidés.
 # `sup_*` : la directive du superviseur, son réveil et l'état de son cœur (niveaux de sortie), de même.
+# `board_state` : ce que réclament les sous-agents du board et leurs niveaux de sortie, de même.
 # `llm_last_call` n'y est pas, exprès : la cadence des appels payants survit à un reset.
 LIFE_KEYS = ("life", "paper_balances", "killswitch", "peak_equity", "day", "risk_tier", "llm_wake", "llm_idle", "llm_plan",
-             "sup_directive", "sup_wake", "sup_state")
-AGENT_KINDS = ("hold", "chaos", "llm", "llm-fake", "supervisor")
+             "sup_directive", "sup_wake", "sup_state", BOARD_STATE_KEY)
+AGENT_KINDS = ("hold", "chaos", "llm", "llm-fake", "supervisor", "board")
 PAID_KINDS = ("llm", "supervisor")      # ceux qui appellent l'API facturée
 
 
@@ -79,6 +81,8 @@ def build_agent(kind: str, cfg: Config, storage: Storage, seed: int | None = Non
         return HoldAgent()
     if kind == "chaos":
         return ChaosAgent(seed=seed)
+    if kind == "board":
+        return stored_board(storage)
     if kind in ("llm", "llm-fake"):
         client = (AnthropicClient(cfg.llm.model, output_schema=DECISION_SCHEMA) if kind == "llm"
                   else FakeLLMClient(seed=seed))

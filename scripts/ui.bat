@@ -1,7 +1,7 @@
 @echo off
 rem L'interface web seule (lecture seule, locale), pour regarder un bot lance ailleurs. Ctrl+C pour arreter.
 rem
-rem   scripts\ui.bat [hold|llm|demo]      ports : hold 8765, llm 8766, demo 8767
+rem   scripts\ui.bat [hold|llm|demo|board]      ports : hold 8765, llm 8766, demo 8767, board 8768
 rem
 rem Pour lancer bot ET interface d'un coup : scripts\start.bat
 call "%~dp0_common.bat"

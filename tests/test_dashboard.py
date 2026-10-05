@@ -72,6 +72,60 @@ def test_snapshot_reflects_a_real_run(tmp_path):
     assert snap["journal"][0]["ts"] >= snap["journal"][-1]["ts"]   # le plus récent d'abord
 
 
+STATE = {"trend": {"qty": {"ETH/EUR": 0.004, "BTC/EUR": 0.0002, "<b>hors config</b>": 3.0, "SOL/EUR": float("nan")},
+                   "stops": {"BTC/EUR": 57_000.0}, "notes": {"BTC/EUR": "<i>note</i>"}}}
+
+
+def test_board_claims_carry_no_text_from_the_database(tmp_path):
+    named = ScriptedAgent([BUY_BTC])
+    named.name = "board"
+    cfg, engine, feed, clock, storage = run(tmp_path, agent=named)
+    assert build_snapshot(cfg, clock())["board"] == []                          # un board sans état : bloc vide
+    storage.set("board_state", STATE)
+    claims = build_snapshot(cfg, clock())["board"]
+    assert [c["symbol"] for c in claims] == list(cfg.symbols)[:2] == ["BTC/EUR", "ETH/EUR"]     # l'ordre de la config
+    assert claims[0] == {"sleeve": "trend", "symbol": "BTC/EUR", "quantity": 0.0002, "stop": 57_000.0,
+                         "value": pytest.approx(12.0), "stop_margin_pct": pytest.approx((60_000 / 57_000 - 1) * 100)}
+    assert claims[1]["stop"] is None and claims[1]["stop_margin_pct"] is None   # pas de niveau : pas de marge
+    assert claims[1]["value"] == pytest.approx(0.004 * 2_500.0)
+    dumped = json.dumps(claims)
+    assert "hors config" not in dumped and "note" not in dumped                 # ni symbole inconnu, ni note
+    storage.set("board_state", "abîmé")
+    assert build_snapshot(cfg, clock())["board"] == []
+
+
+def test_board_claims_read_a_partial_state_without_error():
+    from tradeagent.dashboard import _board_claims
+    partial = {"trend": {"qty": {"BTC/EUR": 0.0002, "ETH/EUR": "abîmé"}}}       # pas de niveaux, une quantité illisible
+    claim, = _board_claims(partial, {"BTC/EUR": 60_000.0, "ETH/EUR": 2_500.0}, ["BTC/EUR", "ETH/EUR"])
+    assert claim["symbol"] == "BTC/EUR" and claim["stop"] is None and claim["value"] == pytest.approx(12.0)
+
+
+def test_board_block_is_only_for_the_board_agent(tmp_path):
+    cfg, engine, feed, clock, storage = run(tmp_path)                           # l'agent s'appelle « scripted »
+    storage.set("board_state", STATE)                                           # un état laissé là par un essai passé
+    assert build_snapshot(cfg, clock())["board"] is None
+
+
+def test_board_claims_without_a_usable_price_have_no_value():
+    from tradeagent.dashboard import _board_claims
+    for quotes in ({}, {"BTC/EUR": 0}, {"BTC/EUR": -5.0}, {"BTC/EUR": True}, {"BTC/EUR": "60000"}):
+        claim, = _board_claims(STATE, quotes, ["BTC/EUR"])
+        assert claim["value"] is None and claim["stop_margin_pct"] is None and claim["stop"] == 57_000.0
+
+
+def test_a_board_without_saved_state_still_shows_an_empty_board_block(tmp_path):
+    from tradeagent.board import stored_board
+    path = tmp_path / "agent.db"
+    cfg = default_cfg(database=str(path))
+    storage = Storage(str(path))
+    engine, feed, clock, storage = make_engine(cfg, stored_board(storage), storage=storage)
+    engine.run_cycle()
+    assert storage.get("board_state") is None                                   # pas de signal : rien n'a été écrit
+    snap = build_snapshot(cfg, clock())
+    assert snap["agent"] == "board" and snap["board"] == []
+
+
 def test_cash_comes_from_current_balances_not_from_the_last_equity_row(tmp_path):
     # Régression : après une liquidation, le dernier point d'equity précède la vente.
     cfg = permissive_cfg(max_total_loss_pct=50, max_drawdown_pct=90)

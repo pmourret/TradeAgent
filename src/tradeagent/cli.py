@@ -11,11 +11,12 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from .advice import idle_advice
-from .app import AGENT_KINDS, build_agent, build_engine, build_feed, reset_life
-from .backtest import (BACKTEST_AGENTS, DEFAULT_AGENTS, compare, format_summary, format_table, market_return_pct, run_backtest,
-                       warmup_seconds)
+from .app import AGENT_KINDS, PAID_KINDS, build_agent, build_engine, build_feed, reset_life
+from .backtest import (BACKTEST_AGENTS, DEFAULT_AGENTS, PAID_AGENTS, compare, format_summary, format_table, market_return_pct,
+                       run_backtest, warmup_seconds)
 from .budget import InferenceBudget, day_start_ts
 from .config import ConfigError, load_config
+from .context import load_context_history
 from .envfile import load_env_file
 from .exchange import ExchangeError
 from .models import TIMEFRAME_SECONDS
@@ -26,9 +27,11 @@ from .llm import AnthropicClient, LLMError, require_api_key
 from .llm_agent import DECISION_SCHEMA
 from .llm_cache import CachingLLMClient, EstimatingClient, ReplyCache
 from .lock import InstanceLock
+from .portfolio import base_currency
 from .profiles import LIVE, PROFILES, apply_profile, get_profile
 from .stopper import StdinStop
 from .storage import Storage
+from .supervisor import DIRECTIVE_SCHEMA, ESTIMATE_REPLY
 from .web import DEFAULT_PORT, make_server
 
 
@@ -46,6 +49,8 @@ def _parser() -> argparse.ArgumentParser:
     run.add_argument("--agent", choices=AGENT_KINDS, default=None,
                      help="hold = ne fait rien (défaut) ; chaos = aléatoire, pour tester les garde-fous ; "
                           "llm = agent Anthropic (coûte de l'argent, clé requise) ; "
+                          "supervisor = les modèles du code tradent, le LLM règle le niveau de risque "
+                          "(coûte de l'argent, clé requise) ; "
                           "llm-fake = faux LLM hors ligne, mêmes comptes de tokens. Prime sur le profil.")
     run.add_argument("--feed", choices=["ccxt", "synthetic"], default=None,
                      help="ccxt = vrais prix publics (défaut), synthetic = marche aléatoire hors ligne. Prime sur le profil.")
@@ -88,8 +93,8 @@ def _parser() -> argparse.ArgumentParser:
     backtest.add_argument("--synthetic", action="store_true",
                           help="historique fabriqué (marche aléatoire), sans réseau : pour essayer la commande")
     backtest.add_argument("--max-api-eur", type=float, default=None, metavar="EUR",
-                          help="obligatoire avec l'agent llm : dépense RÉELLE maximale d'API pour ce backtest")
-    backtest.add_argument("--yes", action="store_true", help="avec l'agent llm : ne demande pas de confirmation")
+                          help="obligatoire avec l'agent llm ou supervisor : dépense RÉELLE maximale d'API pour ce backtest")
+    backtest.add_argument("--yes", action="store_true", help="avec l'agent llm ou supervisor : ne demande pas de confirmation")
     backtest.add_argument("--refresh", action="store_true", help="retélécharge l'historique au lieu d'utiliser le cache")
     return parser
 
@@ -109,7 +114,7 @@ def cmd_run(args: argparse.Namespace) -> int:
     feed_kind = args.feed or (profile.feed if profile else "ccxt")
     if args.cycle_seconds is not None:
         cfg = replace(cfg, cycle_seconds=args.cycle_seconds)
-    if agent_kind == "llm":
+    if agent_kind in PAID_KINDS:
         require_api_key()                         # avant toute écriture : un lancement refusé ne laisse rien derrière lui
     lock = InstanceLock(cfg.database).acquire()   # gardé jusqu'à la fin du processus
     storage = Storage(cfg.database)
@@ -122,7 +127,7 @@ def cmd_run(args: argparse.Namespace) -> int:
           f"symboles={','.join(cfg.symbols)}")
     if profile:
         print(f"base : {cfg.database}  (interface web : tradeagent web --profile {profile.name})")
-    if agent_kind == "llm":
+    if agent_kind in PAID_KINDS:
         budget = InferenceBudget(cfg.llm, storage)
         print(f"LLM {cfg.llm.model} : un appel max toutes les {cfg.llm.call_every_seconds / 60:g} min, "
               f"budget restant {budget.left()['today']:.2f} € aujourd'hui / {budget.left()['total']:.2f} € au total")
@@ -284,13 +289,16 @@ def _lock_llm_cache(cfg) -> InstanceLock:
                           "(deux à la fois dépasseraient le plafond de dépense).") from None
 
 
-def _backtest_llm_client(cfg, args: argparse.Namespace, history, windows: list[tuple[float, float]]) -> CachingLLMClient | None:
+def _backtest_llm_client(cfg, args: argparse.Namespace, history, windows: list[tuple[float, float]],
+                         kind: str = "llm", context=None) -> CachingLLMClient | None:
     """Prépare le vrai LLM pour un backtest : estimation à blanc, puis confirmation. None = refusé, rien dépensé."""
     cost_of = InferenceBudget(cfg.llm, Storage(":memory:")).cost_eur
     cache = ReplyCache(_llm_cache_path(cfg))
-    estimate = EstimatingClient(cache, cfg.llm.model, cost_of)
+    schema, placeholder = ((DIRECTIVE_SCHEMA, ESTIMATE_REPLY) if kind == "supervisor"
+                           else (DECISION_SCHEMA, '{"action": "hold", "reasoning": "estimation"}'))
+    estimate = EstimatingClient(cache, cfg.llm.model, cost_of, placeholder)
     for start, end in windows:
-        run_backtest(cfg, "llm", history, start, end, seed=args.seed, llm_client=estimate)
+        run_backtest(cfg, kind, history, start, end, seed=args.seed, llm_client=estimate, context=context)
 
     to_pay = estimate.calls - estimate.cached
     print(f"vrai LLM ({cfg.llm.model}) : environ {estimate.calls} appels sur la période, dont {estimate.cached} déjà en cache.")
@@ -316,7 +324,7 @@ def _backtest_llm_client(cfg, args: argparse.Namespace, history, windows: list[t
             if answer.strip().lower() != "oui":
                 print("abandonné : rien n'a été dépensé.")
                 return None
-    return CachingLLMClient(lambda: AnthropicClient(cfg.llm.model, output_schema=DECISION_SCHEMA), cache,
+    return CachingLLMClient(lambda: AnthropicClient(cfg.llm.model, output_schema=schema), cache,
                             cfg.llm.model, cost_of,
                             run_cap_eur=args.max_api_eur, total_cap_eur=cfg.llm.total_budget_eur)
 
@@ -324,7 +332,11 @@ def _backtest_llm_client(cfg, args: argparse.Namespace, history, windows: list[t
 def cmd_backtest(args: argparse.Namespace) -> int:
     cfg = load_config(args.config)
     agents = [a.strip() for a in args.agents.split(",") if a.strip()]
-    real_llm = "llm" in agents
+    paid = [a for a in agents if a in PAID_AGENTS]
+    real_llm = bool(paid)
+    if len(paid) > 1:
+        raise ConfigError(f"un seul agent payant par backtest ({' ou '.join(PAID_AGENTS)}) : chacun a son format de "
+                          "réponse et son estimation. Lance-les l'un après l'autre : ce qui est déjà payé est relu du cache.")
     if real_llm:
         if args.max_api_eur is None:
             raise ConfigError("le vrai LLM en backtest coûte de l'argent réel : donne un plafond de dépense, "
@@ -366,15 +378,21 @@ def cmd_backtest(args: argparse.Namespace) -> int:
             history = load_history(public_client(cfg.exchange), cfg.exchange, cfg.symbols, cfg.market.timeframe,
                                    history_start, end, cache_dir, refresh=args.refresh)
             source = f"{cfg.exchange}, bougies {cfg.market.timeframe} (cache : {cache_dir})"
+        context, flows = None, []
+        if "supervisor" in agents and not args.synthetic:
+            # Les flux d'information du superviseur, rejoués comme les prix : données publiques, sans clé.
+            context, flows = load_context_history(Path(cfg.database).parent / "history",
+                                                  [base_currency(s) for s in cfg.symbols], start, end, refresh=args.refresh)
         logger = logging.getLogger("tradeagent")
         previous_level = logger.level
         logger.setLevel(logging.CRITICAL)        # des milliers de cycles : pas de journal par cycle
         lock = _lock_llm_cache(cfg) if real_llm else None     # gardé de l'estimation à la fin du backtest
         try:
-            llm_client = _backtest_llm_client(cfg, args, history, windows) if real_llm else None
+            llm_client = _backtest_llm_client(cfg, args, history, windows, paid[0], context) if real_llm else None
             if real_llm and llm_client is None:
                 return 1                         # refusé à la confirmation : rien n'a été dépensé
-            per_window = [compare(cfg, agents, history, s, e, seed=args.seed, llm_client=llm_client) for s, e in windows]
+            per_window = [compare(cfg, agents, history, s, e, seed=args.seed, llm_client=llm_client, context=context)
+                          for s, e in windows]
         finally:
             logger.setLevel(previous_level)
             if lock is not None:
@@ -388,7 +406,10 @@ def cmd_backtest(args: argparse.Namespace) -> int:
     periods = f"{args.months} périodes de {args.days} j" if args.months > 1 else f"{args.days} j"
     print(f"backtest du {day(start)} au {day(end)} UTC ({periods}), {source}")
     print(f"mise {cfg.stake:g} {cfg.quote_currency}, un cycle toutes les {cfg.cycle_seconds / 60:g} min, "
-          f"frais {cfg.costs.fee_rate * 100:g} % + glissement {cfg.costs.slippage_bps:g} pb par ordre\n")
+          f"frais {cfg.costs.fee_rate * 100:g} % + glissement {cfg.costs.slippage_bps:g} pb par ordre")
+    for flow in flows:
+        print(f"flux du superviseur : {flow}")
+    print()
     for (s, e), results, market_pct in zip(windows, per_window, markets):
         if args.months > 1:
             print(f"-- du {day(s)} au {day(e)} UTC")
@@ -400,6 +421,8 @@ def cmd_backtest(args: argparse.Namespace) -> int:
         print(format_summary(per_window, cfg))
     if llm_client is not None:
         failed = (f", {llm_client.failed_calls} appels ratés comptés au pire coût" if llm_client.failed_calls else "")
+        if llm_client.refused_calls:
+            failed += f", {llm_client.refused_calls} appels refusés par un plafond (résultat incomplet : relève --max-api-eur)"
         print(f"vrai LLM : {llm_client.paid_calls} appels payés ({llm_client.spent_run:.4f} € réels, plafond "
               f"{args.max_api_eur:.2f} €), {llm_client.hits} réponses relues du cache{failed}")
     print("\nÀ lire avec prudence : les ordres sont exécutés au dernier prix de clôture (optimiste), le prix ne bouge pas "

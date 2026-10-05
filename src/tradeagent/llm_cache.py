@@ -143,6 +143,7 @@ class CachingLLMClient:
         self.hits = 0
         self.paid_calls = 0
         self.failed_calls = 0
+        self.refused_calls = 0      # appels interdits par un plafond de dépense
         self.spent_run = 0.0        # coûts réels des appels réussis + réservations des appels ratés
 
     def complete(self, system: str, user: str, max_output_tokens: int) -> LLMReply:
@@ -156,9 +157,11 @@ class CachingLLMClient:
         if self._broken:
             raise LLMError(self._broken)
         if self.spent_run + worst > self._run_cap:
+            self.refused_calls += 1
             raise SpendCapReached(f"plafond de dépense réelle de ce backtest atteint "
                                   f"({self.spent_run:.4f} € comptés, plafond {self._run_cap:.2f} €)")
         if self._cache.spent_lifetime + worst > self._total_cap:
+            self.refused_calls += 1
             raise SpendCapReached(f"plafond de dépense réelle de tous les backtests atteint "
                                   f"({self._cache.spent_lifetime:.4f} € comptés, plafond {self._total_cap:.2f} €)")
         if self._failures >= MAX_FAILURES:
@@ -195,12 +198,15 @@ class CachingLLMClient:
 class EstimatingClient:
     """Répétition à blanc : ne contacte personne, répond « hold » hors cache, et compte ce qu'un vrai backtest
     aurait à payer (appels absents du cache). Les prompts d'un vrai backtest différeront dès la première
-    décision qui n'est pas un hold : c'est une estimation, pas un devis."""
+    décision qui n'est pas un hold : c'est une estimation, pas un devis. `placeholder` est la réponse neutre
+    rendue hors cache (celle d'un agent qui ne change rien)."""
 
-    def __init__(self, cache: ReplyCache, model: str, cost_of: Callable[[LLMUsage], float]) -> None:
+    def __init__(self, cache: ReplyCache, model: str, cost_of: Callable[[LLMUsage], float],
+                 placeholder: str = '{"action": "hold", "reasoning": "estimation"}') -> None:
         self._cache = cache
         self._model = model
         self._cost_of = cost_of
+        self._placeholder = placeholder
         self.calls = 0
         self.cached = 0
         self.typical_cost = 0.0
@@ -218,4 +224,4 @@ class EstimatingClient:
             return cached
         self.typical_cost += self._cost_of(typical)
         self.worst_cost += self._cost_of(worst_case_usage(system, user, max_output_tokens))
-        return LLMReply(text='{"action": "hold", "reasoning": "estimation"}', usage=typical, model=self._model)
+        return LLMReply(text=self._placeholder, usage=typical, model=self._model)

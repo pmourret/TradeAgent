@@ -7,6 +7,7 @@ from typing import Callable
 from .agents import Agent, ChaosAgent, HoldAgent
 from .budget import InferenceBudget
 from .config import Config, ConfigError
+from .context import LiveContext
 from .engine import Engine
 from .feeds import CcxtPriceFeed, PriceFeed, SyntheticPriceFeed
 from .guardrails import Guardrails
@@ -14,13 +15,18 @@ from .killswitch import KillSwitch
 from .llm import AnthropicClient, FakeLLMClient
 from .llm_agent import DECISION_SCHEMA, LLMAgent
 from .paper import PaperExchange
+from .portfolio import base_currency
 from .storage import Storage
+from .supervisor import DIRECTIVE_SCHEMA, SupervisedAgent
 
 # `llm_wake`, `llm_idle` et `llm_plan` : le sommeil, l'arrêt et les plans de sortie de l'agent appartiennent à la
 # vie qui les a décidés.
+# `sup_*` : la directive du superviseur, son réveil et l'état de son cœur (niveaux de sortie), de même.
 # `llm_last_call` n'y est pas, exprès : la cadence des appels payants survit à un reset.
-LIFE_KEYS = ("life", "paper_balances", "killswitch", "peak_equity", "day", "risk_tier", "llm_wake", "llm_idle", "llm_plan")
-AGENT_KINDS = ("hold", "chaos", "llm", "llm-fake")
+LIFE_KEYS = ("life", "paper_balances", "killswitch", "peak_equity", "day", "risk_tier", "llm_wake", "llm_idle", "llm_plan",
+             "sup_directive", "sup_wake", "sup_state")
+AGENT_KINDS = ("hold", "chaos", "llm", "llm-fake", "supervisor")
+PAID_KINDS = ("llm", "supervisor")      # ceux qui appellent l'API facturée
 
 
 def ensure_life(storage: Storage, cfg: Config, now: float) -> float:
@@ -77,4 +83,8 @@ def build_agent(kind: str, cfg: Config, storage: Storage, seed: int | None = Non
         client = (AnthropicClient(cfg.llm.model, output_schema=DECISION_SCHEMA) if kind == "llm"
                   else FakeLLMClient(seed=seed))
         return LLMAgent(cfg, client, InferenceBudget(cfg.llm, storage, clock), storage, clock)
+    if kind == "supervisor":
+        client = AnthropicClient(cfg.llm.model, output_schema=DIRECTIVE_SCHEMA)
+        context = LiveContext(tuple(base_currency(s) for s in cfg.symbols))
+        return SupervisedAgent(cfg, client, InferenceBudget(cfg.llm, storage, clock), storage, clock, context)
     raise ConfigError(f"agent inconnu : {kind!r} (choix : {', '.join(AGENT_KINDS)})")

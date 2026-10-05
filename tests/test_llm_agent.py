@@ -732,7 +732,8 @@ def test_le_bot_et_le_backtest_demandent_le_format_impose(monkeypatch):
     monkeypatch.setattr(app, "AnthropicClient", lambda model, **kwargs: built.append(kwargs) or object())
     app.build_agent("llm", default_cfg(), Storage(":memory:"))
     assert built == [{"output_schema": DECISION_SCHEMA}]
-    assert "output_schema=DECISION_SCHEMA" in open(cli.__file__, encoding="utf-8").read()
+    source = open(cli.__file__, encoding="utf-8").read()
+    assert "output_schema=schema" in source and "else (DECISION_SCHEMA," in source     # le backtest : schéma de l'agent rejoué
 
 
 # -- positions détaillées : prix de revient, gain ou perte latente, âge ------------------------------------------

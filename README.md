@@ -59,7 +59,7 @@ tradeagent up hold llm       # bots + interfaces ensemble (ce que fait scripts/s
 tradeagent web --profile llm --open   # interface web (lecture seule) seule
 tradeagent status --all      # état de tous les profils ; ou --profile llm
 tradeagent resume --profile llm       # relance un bot "halted" après avoir regardé pourquoi
-tradeagent reset --profile llm --yes  # nouvelle vie : repart de la mise de départ (le journal est gardé)
+tradeagent reset --profile llm --yes  # nouvelle vie : repart de la mise de départ (le journal est gardé) ; refusé tant que le bot du profil tourne
 ```
 
 `tradeagent run --stop-on-stdin` sert aux programmes qui lancent le bot (l'application de bureau) : le bot s'arrête proprement, à la fin de son cycle, quand son entrée standard reçoit `stop` ou se ferme. C'est l'équivalent de `Ctrl+C` là où il n'y a pas de terminal, notamment sous Windows. Rien d'autre n'est lu sur l'entrée standard.

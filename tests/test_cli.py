@@ -63,6 +63,20 @@ def test_reset_only_touches_the_chosen_profile(project, capsys):
     assert Storage(str(project / "data" / "paper-demo.db")).get("paper_balances") == before
 
 
+def test_reset_is_refused_while_a_bot_holds_the_database_and_changes_nothing(project, capsys):
+    run(offline("demo", "--agent", "chaos"), capsys)
+    path = project / "data" / "paper-demo.db"
+    before = {key: Storage(str(path)).get(key) for key in ("life", "paper_balances")}
+    assert before["life"] is not None
+    with InstanceLock(path):                                # un `run` est en cours sur cette base
+        code, out, err = run(["reset", "--profile", "demo", "--yes"], capsys)
+    assert code == 1 and "un bot tourne" in err and "nouvelle vie" not in out
+    assert {key: Storage(str(path)).get(key) for key in before} == before
+    code, out, _ = run(["reset", "--profile", "demo", "--yes"], capsys)      # le bot arrêté : le reset passe
+    assert code == 0 and Storage(str(path)).get("life") is None
+    InstanceLock(path).acquire().release()                  # et il a rendu le verrou : un `run` peut repartir
+
+
 def test_explicit_agent_and_feed_win_over_the_profile(project, capsys):
     code, out, _ = run(["run", "--profile", "demo", "--agent", "hold", "--feed", "synthetic", "--cycle-seconds", "0",
                         "--max-cycles", "1"], capsys)

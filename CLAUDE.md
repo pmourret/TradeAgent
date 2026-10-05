@@ -9,6 +9,7 @@ Un agent de trading crypto piloté par un LLM, en Python (≥ 3.10), sur le PC W
 - **Mode actuel : paper trading uniquement** (argent fictif, prix publics de Bitvavo via ccxt). Le mode réel n'existe pas ; mise réelle visée : 50 € au plus.
 - C'est une expérience, pas un produit : rien n'indique qu'un LLM batte le marché une fois frais et API payés. `hold` est la référence à battre.
 - Une application de bureau Electron (`desktop/`) affiche l'interface web locale et démarre/arrête les bots.
+- **Cap fixé par Pierre (2026-10-05) : l'application doit tourner 24 h sur 24 et être la plus rentable possible.** Toute proposition se juge à cette double aune : la disponibilité (redémarrage sans perte d'état, aucun arrêt silencieux, positions surveillées en continu) et le résultat net de frais, mesuré contre `hold` et `buyhold`. Jamais au prix d'un invariant, et jamais en présentant un résultat de paper ou de backtest comme une promesse.
 - **Ce code manipulera de l'argent : la justesse passe avant la vitesse et avant l'économie de tokens.**
 
 ## Invariants — ne jamais casser, ne jamais contourner
@@ -22,7 +23,7 @@ Ce sont des propriétés de sécurité, protégées par des tests. Si une demand
 5. **Les garde-fous réduisent avant de refuser**, et journalisent la raison (« réduit de 14.40 à 10.00 EUR par max_order_pct »).
 6. **Config stricte.** Clé inconnue ou valeur incohérente = refus au démarrage (une faute de frappe ne doit jamais désactiver un garde-fou). `mode: live` est refusé (`config.py`) tant que la quarantaine et l'adaptateur réel n'existent pas.
 7. **Budget d'inférence appliqué en code** : chaque appel est valorisé et écrit dans `llm_calls` ; `llm_last_call` est écrit *avant* l'appel (une panne ne déclenche jamais une rafale d'appels payants) ; plafonds par jour (UTC) et au total. Une pause (`Decision.skipped`) n'est ni un hold ni une erreur : elle ne remet pas à zéro le compteur d'erreurs.
-8. **Une vie = une mise.** Changer `stake` sans `reset` est refusé. `reset` efface l'état de la vie (`LIFE_KEYS` dans `app.py`), garde le journal et le suivi des coûts API.
+8. **Une vie = une mise.** Changer `stake` sans `reset` est refusé. `reset` efface l'état de la vie (`LIFE_KEYS` dans `app.py`), garde le journal et le suivi des coûts API ; il est refusé tant qu'un `run` tient la base (le bot vivant réécrirait l'ancienne vie par-dessus la nouvelle).
 9. **Aucun secret** dans un prompt, un log, la base, le snapshot web ou un message d'erreur. Aucune fonction de retrait ou de transfert de fonds dans le code, jamais. Clés d'exchange futures : sous-compte dédié, **sans droit de retrait**. Ne lis jamais `.env` (la lecture est d'ailleurs refusée par `.claude/settings.json`).
 10. **Interface web en lecture seule**, boucle locale uniquement (pas d'option pour l'ouvrir au réseau), base ouverte en `mode=ro`, GET/HEAD seulement, en-tête `Host` vérifié, CSP stricte, texte de l'agent affiché via `textContent`. Pas de bouton qui agit sur le bot. Ce sont des tests (`test_web.py`), pas des conventions. **L'application de bureau ne change rien à cela** : elle affiche cette même page dans une fenêtre verrouillée ; démarrer ou arrêter un bot se fait par le menu natif et la zone de notification, jamais depuis une page ni par une route HTTP. `resume` et `reset` restent en ligne de commande.
 11. **Un seul `run` par base** (verrou fichier de l'OS, `lock.py`) ; chaque profil a sa propre base.
@@ -38,7 +39,7 @@ cd desktop; node --test                              # tests de l'application de
 cd desktop; npm start                                # l'application de bureau
 ```
 
-Profils : `hold` (référence, gratuit), `llm` (API facturée), `demo` (hors ligne). Scripts `scripts\*.bat` et `scripts/*.sh` : fines enveloppes des mêmes commandes.
+Profils : `hold` (référence, gratuit), `board` (les modèles du code, sans LLM, gratuit), `llm` (API facturée), `demo` (hors ligne). Scripts `scripts\*.bat` et `scripts/*.sh` : fines enveloppes des mêmes commandes.
 
 ## Conventions
 

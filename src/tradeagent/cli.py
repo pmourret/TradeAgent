@@ -252,8 +252,18 @@ def cmd_reset(args: argparse.Namespace) -> int:
               "Le journal et le suivi des coûts API sont conservés. Relance avec --yes pour confirmer.",
               file=sys.stderr)
         return 1
-    storage = Storage(cfg.database)
-    reset_life(storage, time.time())
+    # Un bot qui tourne garde ses soldes et l'état de son agent en mémoire et les réécrirait après le reset : la
+    # « nouvelle vie » hériterait de l'ancienne. Le reset prend donc le verrou du `run`, et refuse s'il est tenu.
+    try:
+        lock = InstanceLock(cfg.database).acquire()
+    except ConfigError:
+        print(f"refusé : un bot tourne sur cette base ({cfg.database}). Arrête-le d'abord (menu Bots de "
+              "l'application, ou Ctrl+C dans son terminal), puis relance le reset.", file=sys.stderr)
+        return 1
+    try:
+        reset_life(Storage(cfg.database), time.time())
+    finally:
+        lock.release()
     print(f"nouvelle vie : prochaine mise {cfg.stake:g} {cfg.quote_currency}.")
     return 0
 

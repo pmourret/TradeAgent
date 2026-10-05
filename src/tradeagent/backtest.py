@@ -26,7 +26,6 @@ from .app import build_engine
 from .board import BoardAgent, TrendSleeve
 from .budget import InferenceBudget
 from .config import Config, ConfigError
-from .context import ContextSource
 from .exchange import ExchangeError
 from .llm import FakeLLMClient, LLMClient
 from .llm_agent import LLMAgent
@@ -35,11 +34,10 @@ from .portfolio import base_currency
 from .replay import ReplayPriceFeed, SimClock
 from .storage import Storage
 from .strategies import STRATEGIES
-from .supervisor import SupervisedAgent
 
-BACKTEST_AGENTS = ("hold", "buyhold", "dca", "momentum", "quant", "board", "chaos", "llm-fake", "llm", "supervisor")
-PAID_AGENTS = ("llm", "supervisor")     # ceux qui appellent le vrai LLM : argent réel, plafond obligatoire
-DEFAULT_AGENTS = ("hold", "buyhold", "dca", "momentum", "quant", "chaos")
+BACKTEST_AGENTS = ("hold", "buyhold", "quant", "board", "chaos", "llm-fake", "llm")
+PAID_AGENTS = ("llm",)     # ceux qui appellent le vrai LLM : argent réel, plafond obligatoire
+DEFAULT_AGENTS = ("hold", "buyhold", "quant", "board", "chaos")
 STOPPED = ("dead", "halted", "stopped")
 
 
@@ -74,7 +72,7 @@ def warmup_seconds(cfg: Config) -> float:
 
 
 def _build_agent(kind: str, cfg: Config, storage: Storage, clock: SimClock, seed: int | None,
-                 llm_client: LLMClient | None = None, context: ContextSource | None = None) -> Agent:
+                 llm_client: LLMClient | None = None) -> Agent:
     if kind == "hold":
         return HoldAgent()
     if kind == "chaos":
@@ -89,25 +87,20 @@ def _build_agent(kind: str, cfg: Config, storage: Storage, clock: SimClock, seed
         if llm_client is None:      # jamais de vrai client construit ici : pas d'appel payant par accident
             raise ConfigError("le vrai LLM en backtest coûte de l'argent réel : il faut un plafond de dépense "
                               f"(tradeagent backtest --agents {kind} --max-api-eur 0.50). Sans dépense : llm-fake.")
-        budget = InferenceBudget(cfg.llm, storage, clock)
-        if kind == "supervisor":
-            return SupervisedAgent(cfg, llm_client, budget, storage, clock, context)
-        return LLMAgent(cfg, llm_client, budget, storage, clock)
+        return LLMAgent(cfg, llm_client, InferenceBudget(cfg.llm, storage, clock), storage, clock)
     raise ConfigError(f"agent de backtest inconnu : {kind!r} (choix : {', '.join(BACKTEST_AGENTS)})")
 
 
 def run_backtest(cfg: Config, agent_kind: str, history: dict[str, list[Candle]], start: float, end: float,
-                 seed: int | None = None, llm_client: LLMClient | None = None,
-                 context: ContextSource | None = None) -> BacktestResult:
-    """Un agent, une période. `history` doit commencer `warmup_seconds(cfg)` avant `start`. `context` : les flux
-    d'information rejoués, pour le superviseur."""
+                 seed: int | None = None, llm_client: LLMClient | None = None) -> BacktestResult:
+    """Un agent, une période. `history` doit commencer `warmup_seconds(cfg)` avant `start`."""
     if end <= start:
         raise ConfigError("la période du backtest est vide")
     clock = SimClock(start)
     storage = Storage(":memory:")
     try:
         feed = ReplayPriceFeed(history, cfg.market.timeframe, clock)
-        agent = _build_agent(agent_kind, cfg, storage, clock, seed, llm_client, context)
+        agent = _build_agent(agent_kind, cfg, storage, clock, seed, llm_client)
         engine = build_engine(cfg, agent, feed, storage, clock)
 
         cycles, t = 0, float(start)
@@ -159,8 +152,8 @@ def market_return_pct(cfg: Config, history: dict[str, list[Candle]], start: floa
 
 def compare(cfg: Config, agents: list[str] | tuple[str, ...], history: dict[str, list[Candle]],
             start: float, end: float, seed: int | None = None,
-            llm_client: LLMClient | None = None, context: ContextSource | None = None) -> list[BacktestResult]:
-    return [run_backtest(cfg, kind, history, start, end, seed, llm_client if kind in PAID_AGENTS else None, context)
+            llm_client: LLMClient | None = None) -> list[BacktestResult]:
+    return [run_backtest(cfg, kind, history, start, end, seed, llm_client if kind in PAID_AGENTS else None)
             for kind in agents]
 
 

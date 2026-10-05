@@ -5,7 +5,7 @@ import pytest
 
 from helpers import default_cfg, permissive_cfg
 from tradeagent import cli
-from tradeagent.backtest import (BACKTEST_AGENTS, DEFAULT_AGENTS, compare, format_table, market_return_pct,
+from tradeagent.backtest import (BACKTEST_AGENTS, DEFAULT_AGENTS, PAID_AGENTS, compare, format_table, market_return_pct,
                                  max_drawdown_pct, run_backtest, warmup_seconds)
 from tradeagent.config import ConfigError
 from tradeagent.models import Candle
@@ -115,16 +115,16 @@ def test_le_vrai_llm_est_refuse_et_un_agent_inconnu_aussi():
         run_backtest(cfg, "martingale", history, T0, T0 + DAY)
     with pytest.raises(ConfigError, match="vide"):
         run_backtest(cfg, "hold", history, T0, T0)
-    assert "llm" not in DEFAULT_AGENTS and set(DEFAULT_AGENTS) <= set(BACKTEST_AGENTS)      # jamais payant par défaut
+    assert not set(PAID_AGENTS) & set(DEFAULT_AGENTS) and set(DEFAULT_AGENTS) <= set(BACKTEST_AGENTS)     # jamais payant par défaut
 
 
 def test_le_meme_backtest_donne_deux_fois_le_meme_resultat():
     cfg = default_cfg(stake=50.0)
     history = synthetic_history(cfg.symbols, "1h", T0 - warmup_seconds(cfg), T0 + 2 * DAY, seed=5)
-    first = compare(cfg, ["chaos", "momentum", "dca"], history, T0, T0 + 2 * DAY, seed=7)
-    second = compare(cfg, ["chaos", "momentum", "dca"], history, T0, T0 + 2 * DAY, seed=7)
+    first = compare(cfg, ["chaos", "buyhold", "quant"], history, T0, T0 + 2 * DAY, seed=7)
+    second = compare(cfg, ["chaos", "buyhold", "quant"], history, T0, T0 + 2 * DAY, seed=7)
     assert first == second
-    assert [r.agent for r in first] == ["chaos", "momentum", "dca"]
+    assert [r.agent for r in first] == ["chaos", "buyhold", "quant"]
     assert first[0].orders > 0
 
 
@@ -141,9 +141,9 @@ def test_le_repere_du_marche_est_un_achat_a_parts_egales_sans_garde_fou():
 def test_le_tableau_montre_chaque_agent_et_le_repere():
     cfg = default_cfg(stake=50.0)
     history = synthetic_history(cfg.symbols, "1h", T0 - warmup_seconds(cfg), T0 + DAY, seed=1)
-    table = format_table(compare(cfg, ["hold", "dca"], history, T0, T0 + DAY), cfg, 1.234)
+    table = format_table(compare(cfg, ["hold", "buyhold"], history, T0, T0 + DAY), cfg, 1.234)
     lines = table.splitlines()
-    assert lines[1].startswith("hold") and lines[2].startswith("dca")
+    assert lines[1].startswith("hold") and lines[2].startswith("buyhold")
     assert len(lines) == 4 and "!" not in table                                 # aucun arrêt à signaler
     assert "+1.23 %" in lines[-1] and "hors garde-fous" in lines[-1]
 
@@ -153,11 +153,11 @@ def test_la_commande_backtest_tourne_hors_ligne_et_n_ecrit_aucune_base(tmp_path,
     monkeypatch.chdir(tmp_path)
     (tmp_path / "config.yaml").write_text("database: data/agent.db\n", encoding="utf-8")
     monkeypatch.setattr(cli, "public_client", lambda exchange: pytest.fail("accès réseau en mode synthétique"))
-    code = cli.main(["backtest", "--synthetic", "--days", "2", "--agents", "hold,dca", "--end", "2025-10-01"])
+    code = cli.main(["backtest", "--synthetic", "--days", "2", "--agents", "hold,buyhold", "--end", "2025-10-01"])
     out = capsys.readouterr().out
     assert code == 0
     assert "backtest du 2025-09-29 00:00 au 2025-10-01 00:00 UTC (2 j)" in out
-    assert "hold" in out and "dca" in out and "Ce n'est pas un conseil de placement" in out
+    assert "hold" in out and "buyhold" in out and "Ce n'est pas un conseil de placement" in out
     assert not (tmp_path / "data").exists()                                     # ni base ni cache
 
 
@@ -223,7 +223,7 @@ def test_la_commande_backtest_rend_le_niveau_de_journal(tmp_path, monkeypatch):
 def test_la_commande_rejoue_plusieurs_periodes_et_affiche_le_cumul(tmp_path, monkeypatch, capsys):
     monkeypatch.chdir(tmp_path)
     (tmp_path / "config.yaml").write_text("database: data/agent.db\nstake: 50\n", encoding="utf-8")
-    code = cli.main(["backtest", "--synthetic", "--days", "2", "--months", "3", "--agents", "hold,dca",
+    code = cli.main(["backtest", "--synthetic", "--days", "2", "--months", "3", "--agents", "hold,buyhold",
                      "--end", "2025-10-07"])
     out = capsys.readouterr().out
     assert code == 0

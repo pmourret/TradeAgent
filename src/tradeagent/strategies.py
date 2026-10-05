@@ -53,62 +53,6 @@ class BuyAndHoldAgent:
         return Decision(HOLD, reasoning="buyhold: rien à acheter à ce cycle")
 
 
-class DcaAgent:
-    """DCA (achats programmés) : achète un petit montant fixe à intervalle régulier, en alternant les symboles,
-    sans regarder le prix. Lisse le prix d'entrée."""
-
-    name = "dca"
-
-    def __init__(self, interval_seconds: float = 86_400.0, stake_pct: float = 10.0) -> None:
-        self._interval = interval_seconds
-        self._pct = stake_pct
-        self._last: float | None = None
-        self._turn = 0
-
-    def decide(self, view: MarketView) -> Decision:
-        if self._last is not None and view.timestamp - self._last < self._interval:
-            return Decision(HOLD, reasoning="dca: pas encore l'heure")
-        symbols = sorted(view.positions)
-        symbol = symbols[self._turn % len(symbols)]
-        wanted = max(view.stake * self._pct / 100, view.limits.get("min_order_quote", 0.0))
-        amount = min(wanted, buy_room(view, symbol))
-        if amount < view.limits.get("min_order_quote", 0.0) or amount <= 0:
-            return Decision(HOLD, reasoning="dca: plus de marge pour acheter")
-        self._last = view.timestamp
-        self._turn += 1
-        return Decision(BUY, symbol, round(amount, 2), "dca: achat programmé")
-
-
-class MomentumAgent:
-    """Momentum simple (suivi de tendance) : achète ce qui a monté sur 24 h, vend ce qui baisse sur 24 h."""
-
-    name = "momentum"
-
-    def __init__(self, buy_above_pct: float = 2.0, sell_below_pct: float = 0.0) -> None:
-        self._buy_above = buy_above_pct
-        self._sell_below = sell_below_pct
-
-    @staticmethod
-    def _change_24h(view: MarketView, symbol: str) -> float | None:
-        return (view.market.get(symbol, {}).get("change_pct") or {}).get("24h")
-
-    def decide(self, view: MarketView) -> Decision:
-        minimum = view.limits.get("min_order_quote", 0.0)
-        for symbol in sorted(view.positions):          # sortir d'abord : une vente n'est jamais bloquée
-            change = self._change_24h(view, symbol)
-            held = view.positions[symbol]["value"]
-            if change is not None and change < self._sell_below and held >= max(minimum, 0.01):
-                return Decision(SELL, symbol, held, f"momentum: {change:+.2f} % sur 24 h, on sort")
-        for symbol in sorted(view.positions):
-            change = self._change_24h(view, symbol)
-            if change is None or change <= self._buy_above or view.positions[symbol]["value"] >= minimum:
-                continue
-            room = buy_room(view, symbol)
-            if room > 0:
-                return Decision(BUY, symbol, room, f"momentum: {change:+.2f} % sur 24 h, on entre")
-        return Decision(HOLD, reasoning="momentum: pas de signal")
-
-
 class QuantAgent:
     """Le témoin : trade sur les signaux des modèles mathématiques (`signals.py`), sans LLM, donc sans loyer.
 
@@ -117,8 +61,9 @@ class QuantAgent:
     hausse. C'est la référence à battre pour tout agent LLM qui reçoit les mêmes signaux : s'il ne fait pas mieux,
     il n'apporte rien par-dessus les modèles.
 
-    `trade` accepte un niveau d'exposition et une liste de symboles : c'est par là que le superviseur
-    (`supervisor.py`) règle le risque sans toucher aux règles. À 1.0 et sans liste, `trade` est exactement le témoin.
+    `trade` accepte un niveau d'exposition et une liste de symboles : c'est par là que l'ancien superviseur LLM
+    (retiré le 2026-10-05) réglait le risque. À 1.0 et sans liste, `trade` est exactement le témoin, et c'est ainsi
+    qu'il est appelé partout : le code n'est pas retouché pour ne pas changer le témoin.
     `state` reçoit les niveaux de sortie et la taille de base de chaque position : un dictionnaire que l'appelant
     peut garder en base (le témoin, lui, le garde en mémoire : il ne sert qu'au backtest).
 
@@ -198,4 +143,4 @@ class QuantAgent:
         return Decision(HOLD, reasoning="quant: pas de signal")
 
 
-STRATEGIES = {"buyhold": BuyAndHoldAgent, "dca": DcaAgent, "momentum": MomentumAgent, "quant": QuantAgent}
+STRATEGIES = {"buyhold": BuyAndHoldAgent, "quant": QuantAgent}

@@ -161,6 +161,20 @@ def test_le_plafond_du_backtest_est_verifie_avant_l_appel_avec_une_estimation_pe
     exact.complete("sys", "user 0", 400)                                    # pile le plafond : accepté
 
 
+def test_un_appel_refuse_par_un_plafond_est_compte(tmp_path):
+    client = CachingLLMClient(lambda: pytest.fail("appel payant"), ReplyCache(tmp_path / "cache.jsonl"), "m",
+                              lambda usage: 1.0, run_cap_eur=0.5, total_cap_eur=10.0)
+    for _ in range(2):
+        with pytest.raises(SpendCapReached):
+            client.complete("s", "u", 100)
+    assert client.refused_calls == 2
+    total = CachingLLMClient(lambda: pytest.fail("appel payant"), ReplyCache(tmp_path / "cache.jsonl"), "m",
+                             lambda usage: 1.0, run_cap_eur=5.0, total_cap_eur=0.5)
+    with pytest.raises(SpendCapReached):
+        total.complete("s", "u", 100)
+    assert total.refused_calls == 1
+
+
 def test_le_plafond_cumule_de_tous_les_backtests_tient_d_un_lancement_a_l_autre(tmp_path):
     first, _ = client(tmp_path, Inner(), total_cap=0.60)
     first.complete("sys", "user 0", 400)                                    # 0.15 payé

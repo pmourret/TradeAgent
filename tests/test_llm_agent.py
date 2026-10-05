@@ -733,7 +733,7 @@ def test_le_bot_et_le_backtest_demandent_le_format_impose(monkeypatch):
     app.build_agent("llm", default_cfg(), Storage(":memory:"))
     assert built == [{"output_schema": DECISION_SCHEMA}]
     source = open(cli.__file__, encoding="utf-8").read()
-    assert "output_schema=schema" in source and "else (DECISION_SCHEMA," in source     # le backtest : schéma de l'agent rejoué
+    assert "output_schema=DECISION_SCHEMA" in source                           # le backtest : le même schéma
 
 
 # -- positions détaillées : prix de revient, gain ou perte latente, âge ------------------------------------------

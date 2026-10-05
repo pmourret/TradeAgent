@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from tradeagent.agents import MarketView
 from tradeagent.models import BUY, HOLD, SELL
-from tradeagent.strategies import STRATEGIES, BuyAndHoldAgent, DcaAgent, MomentumAgent, buy_room
+from tradeagent.strategies import STRATEGIES, BuyAndHoldAgent, buy_room
 
 LIMITS = {
     "max_order_quote": 10.0, "max_position_quote_per_symbol": 20.0, "max_total_exposure_quote": 40.0,
@@ -69,53 +69,6 @@ def test_buyhold_attend_sans_renoncer_tant_qu_il_n_a_rien_achete():
     assert agent.decide(view()).action == BUY
 
 
-# -- DCA -----------------------------------------------------------------------
-def test_dca_achete_a_intervalle_fixe_en_alternant_les_symboles():
-    agent = DcaAgent(interval_seconds=86_400.0, stake_pct=10.0)
-    t = 1_760_000_000.0
-    first = agent.decide(view(ts=t))
-    assert (first.action, first.symbol, first.amount_quote) == (BUY, "BTC/EUR", 5.0)       # 10 % de 50
-    assert agent.decide(view(btc=5.0, ts=t + 86_399)).action == HOLD
-    second = agent.decide(view(btc=5.0, ts=t + 86_400))
-    assert (second.action, second.symbol) == (BUY, "ETH/EUR")
-    third = agent.decide(view(btc=5.0, eth=5.0, ts=t + 2 * 86_400))
-    assert third.symbol == "BTC/EUR"
-
-
-def test_dca_ne_descend_pas_sous_l_ordre_minimum_et_s_arrete_sans_marge():
-    agent = DcaAgent(stake_pct=2.0)                                         # 1 EUR : relevé au minimum de 5
-    assert agent.decide(view()).amount_quote == 5.0
-    blocked = DcaAgent()
-    t = 1_760_000_000.0
-    assert blocked.decide(view(btc=20.0, eth=20.0, ts=t)).action == HOLD
-    retry = blocked.decide(view(ts=t + 900))                                # un tour sans achat ne décale pas le suivant
-    assert retry.action == BUY and retry.symbol == "BTC/EUR"
-
-
-# -- momentum ------------------------------------------------------------------
-def test_momentum_entre_sur_une_hausse_et_sort_sur_une_baisse():
-    agent = MomentumAgent(buy_above_pct=2.0, sell_below_pct=0.0)
-    buy = agent.decide(view(market=change(btc=2.5, eth=1.0)))
-    assert (buy.action, buy.symbol, buy.amount_quote) == (BUY, "BTC/EUR", 10.0)
-    assert agent.decide(view(market=change(btc=2.0))).action == HOLD        # seuil strict
-    assert agent.decide(view(btc=10.0, market=change(btc=3.0))).action == HOLD       # déjà en position
-    sell = agent.decide(view(btc=10.0, market=change(btc=-0.1)))
-    assert (sell.action, sell.symbol, sell.amount_quote) == (SELL, "BTC/EUR", 10.0)  # vend toute la position
-    assert agent.decide(view(btc=10.0, market=change(btc=0.0))).action == HOLD
-
-
-def test_momentum_sort_avant_d_entrer_et_ignore_la_poussiere_et_les_donnees_absentes():
-    agent = MomentumAgent()
-    both = agent.decide(view(eth=10.0, market=change(btc=5.0, eth=-3.0)))
-    assert (both.action, both.symbol) == (SELL, "ETH/EUR")
-    assert agent.decide(view(btc=2.0, market=change(btc=-5.0))).action == HOLD       # sous l'ordre minimum
-    assert agent.decide(view(market={})).action == HOLD
-    assert agent.decide(view(market={"BTC/EUR": {"last": 1.0}})).action == HOLD
-    blocked = agent.decide(view(tier="defensive", btc=10.0, market=change(btc=-1.0, eth=9.0)))
-    assert blocked.action == SELL                                           # une sortie reste possible en défensif
-    assert agent.decide(view(tier="defensive", market=change(eth=9.0))).action == HOLD
-
-
 def test_le_registre_des_strategies():
-    assert set(STRATEGIES) == {"buyhold", "dca", "momentum", "quant"}
+    assert set(STRATEGIES) == {"buyhold", "quant"}
     assert all(cls().name == name for name, cls in STRATEGIES.items())

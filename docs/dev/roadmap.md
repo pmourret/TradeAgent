@@ -50,6 +50,8 @@ La ligne `llm` vient d'un lancement fait quelques heures plus tôt : la fenêtre
 5. **Trois choix de conception du superviseur faits par Claude, jamais validés** : les multiplicateurs de posture (×2, ×1, ×0,5, tout vendre) ; un appel raté du superviseur n'est pas compté par le kill switch (une panne durable de l'API ne met pas le bot en `halted`, il continue comme `quant`) ; l'agent lit lui-même les flux publics au lieu de les recevoir du moteur.
 6. **Les idées de Pierre**, à recueillir en début de session : elles passent avant cette liste.
 
+> **Code retiré le 2026-10-05** (décision de Pierre) : `supervisor.py`, `context.py`, les agents de backtest `dca` et `momentum`. Tout ce qui, dans ce fichier, décrit le superviseur, ses flux ou ces deux agents est de l'histoire : le code est dans git (dernier commit qui le contient : `6f52c3d`).
+
 ### Décisions du 2026-10-05 (session de réflexion, aucun code écrit)
 
 Idées de Pierre : un « board » de trading en pyramide (un superviseur au sommet, des sous-agents quant en dessous), la rentabilité d'abord, puis le clonage avec des facteurs auto-générés. Décidé avec lui (détail dans `decisions.md`) :

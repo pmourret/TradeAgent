@@ -66,7 +66,7 @@ tradeagent reset --profile llm --yes  # nouvelle vie : repart de la mise de dép
 
 Sans `--profile`, les commandes utilisent la base de `config.yaml` (`data/agent.db`), comme avant. `--agent` et `--feed` restent prioritaires sur le profil.
 
-Agents : `hold` (ne fait rien, **la référence à battre**), `chaos` (aléatoire, demande aussi des choses absurdes, pour tester la plomberie), `llm-fake` (sorties simulées, coût simulé, pour tester le circuit LLM hors ligne), `llm` (Anthropic : le LLM choisit chaque ordre) et `supervisor` (Anthropic : les modèles du code tradent, le LLM ne règle que le niveau de risque, voir « Le superviseur »). `supervisor` n'a pas encore de profil : `tradeagent run --agent supervisor` utilise la base de `config.yaml`.
+Agents : `hold` (ne fait rien, **la référence à battre**), `chaos` (aléatoire, demande aussi des choses absurdes, pour tester la plomberie), `llm-fake` (sorties simulées, coût simulé, pour tester le circuit LLM hors ligne), `llm` (Anthropic : le LLM choisit chaque ordre) et `board` (les sous-agents du code tradent, sans LLM : c'est l'agent du profil `board`).
 
 ### Clé API
 
@@ -163,7 +163,7 @@ Avant de comparer des agents sur des semaines de paper trading, on peut les fair
 ```bash
 tradeagent backtest                      # 30 derniers jours, bougies de l'exchange de config.yaml
 tradeagent backtest --days 90 --end 2026-09-01
-tradeagent backtest --agents hold,buyhold,momentum
+tradeagent backtest --agents hold,buyhold,quant,board
 tradeagent backtest --days 30 --months 7     # 7 périodes de 30 jours à la suite, avec le cumul par agent
 tradeagent backtest --synthetic          # sans réseau : historique fabriqué, pour essayer la commande
 ```
@@ -174,12 +174,9 @@ Le backtest fait tourner **le vrai moteur** : mêmes garde-fous, même kill swit
 |---|---|
 | `hold` | Rien. La référence : finit toujours à la mise |
 | `buyhold` | Achat-conservation : achète autant de chaque symbole que les garde-fous le permettent, à parts égales, puis ne touche plus à rien |
-| `dca` | Achats programmés : 10 % de la mise par jour, en alternant les symboles, sans regarder le prix |
-| `momentum` | Suivi de tendance : achète ce qui a pris plus de 2 % en 24 h, vend ce qui baisse sur 24 h |
 | `quant` | Le témoin : trade sur les signaux des modèles mathématiques, sans LLM donc sans loyer. Achète une tendance haussière à la taille du modèle de risque, sort quand la tendance se retourne ou que son niveau de sortie (qui suit le prix à la hausse) est touché |
-| `board` | Le board : des sous-agents tiennent chacun ce qu'ils veulent détenir, un seul portefeuille additionne ces cibles et trade l'écart, un ordre par cycle, les ventes d'abord. Pour l'instant un seul sous-agent, le suivi de tendance de `quant` : les deux lignes doivent donc se ressembler. Pas dans la liste par défaut : `--agents quant,board`. C'est aussi l'agent du profil `board`, qui tourne en direct : son état (ce que chaque sous-agent réclame, ses niveaux de sortie) est gardé en base, survit à un redémarrage, est effacé par `reset`, et s'affiche sous le portefeuille dans l'interface. Une position que plus aucun sous-agent ne réclame (état effacé ou abîmé) est vendue dès qu'elle vaut au moins l'ordre minimal ; en dessous elle est invendable et reste là |
+| `board` | Le board : des sous-agents tiennent chacun ce qu'ils veulent détenir, un seul portefeuille additionne ces cibles et trade l'écart, un ordre par cycle, les ventes d'abord. Pour l'instant un seul sous-agent, le suivi de tendance de `quant` : les deux lignes doivent donc se ressembler. C'est aussi l'agent du profil `board`, qui tourne en direct : son état (ce que chaque sous-agent réclame, ses niveaux de sortie) est gardé en base, survit à un redémarrage, est effacé par `reset`, et s'affiche sous le portefeuille dans l'interface. Une position que plus aucun sous-agent ne réclame (état effacé ou abîmé) est vendue dès qu'elle vaut au moins l'ordre minimal ; en dessous elle est invendable et reste là |
 | `chaos` | Aléatoire : montre ce que coûtent les frais quand on trade sans raison |
-| `supervisor` | **Payant** (vrai LLM, comme `llm`). Le témoin `quant` trade, le LLM règle le niveau de risque environ une fois par jour, avec les flux d'information. À comparer à `quant` : la différence, c'est ce que le LLM apporte ou coûte |
 | `llm-fake` | Faux LLM (décisions aléatoires) : vérifie que les coûts d'API entrent bien dans le résultat net |
 
 Avec `--months N`, la commande rejoue N périodes consécutives et termine par un tableau de cumul : net total, nombre de mois positifs, pire mois. C'est lui qu'il faut regarder : un mois isolé ne dit presque rien. Chaque période repart de la mise, les gains ne sont pas réinvestis d'un mois sur l'autre.
@@ -204,10 +201,10 @@ tradeagent backtest --agents hold,buyhold,llm --days 7 --max-api-eur 0.50
 
 Ici chaque appel au LLM coûte de l'**argent réel**, et le budget de `config.yaml` ne suffit pas à protéger : un backtest part d'une base vide, ses compteurs repartent donc de zéro à chaque lancement. D'où des protections propres au backtest, appliquées par le code :
 
-- `--max-api-eur` est **obligatoire** avec l'agent `llm` ou `supervisor` : c'est la dépense réelle maximale de ce backtest. Un seul agent payant par backtest (ils se lancent l'un après l'autre, ce qui est payé est relu du cache). Il ne peut pas dépasser `llm.total_budget_eur` ;
+- `--max-api-eur` est **obligatoire** avec l'agent `llm` : c'est la dépense réelle maximale de ce backtest. Il ne peut pas dépasser `llm.total_budget_eur` ;
 - avant de lancer, une répétition à blanc (sans aucun appel) affiche le nombre d'appels prévus, ce qui est déjà en cache et le coût estimé ; si l'estimation dépasse le plafond, le backtest refuse de démarrer ;
 - il faut ensuite taper `oui` (ou passer `--yes`). Sans terminal, c'est un refus ;
-- avant **chaque** appel, le code vérifie deux plafonds avec une estimation pessimiste du coût de l'appel : celui du backtest en cours, et celui de **tous les backtests cumulés** (`llm.total_budget_eur`, d'après ce qui a déjà été payé). Plafond atteint : l'agent `llm` s'arrête (`halted`), c'est signalé sous le tableau ; le superviseur, lui, continue sans nouvelle directive, et la ligne « vrai LLM » compte les appels refusés (le résultat est alors incomplet) ;
+- avant **chaque** appel, le code vérifie deux plafonds avec une estimation pessimiste du coût de l'appel : celui du backtest en cours, et celui de **tous les backtests cumulés** (`llm.total_budget_eur`, d'après ce qui a déjà été payé). Plafond atteint : l'agent `llm` s'arrête (`halted`), c'est signalé sous le tableau ; la ligne « vrai LLM » compte les appels refusés (le résultat est alors incomplet) ;
 - le coût pessimiste de chaque appel est **réservé** dans le fichier de cache avant l'appel, puis remplacé par le coût réel à la réponse. Un appel raté, un arrêt brutal ou un disque plein laissent donc la réservation comptée (on suppose l'appel facturé) : la comptabilité se trompe toujours du côté prudent. Si le fichier ne peut pas être écrit, aucun appel payant ne part ;
 - trois appels ratés d'affilée, et le backtest n'essaie plus ;
 - un seul backtest payant à la fois (verrou) : deux en parallèle liraient le même cumul et dépasseraient le plafond.
@@ -225,47 +222,6 @@ Limites à connaître :
 - les appels s'enchaînent sans attente : sur une longue période, l'API peut refuser pour excès de débit, ce qui arrête l'agent après trois échecs.
 
 `llm-fake` reste là pour vérifier la chaîne sans rien dépenser.
-
-### Le superviseur : le code trade, le LLM règle le risque
-
-```bash
-tradeagent backtest --agents hold,buyhold,quant,supervisor --days 30 --months 7 --max-api-eur 1.00
-```
-
-Sur sept mois de backtest réel, l'agent `llm` qui choisissait chaque ordre n'a rien apporté par-dessus les modèles mathématiques (`quant`), et il payait un loyer. Le superviseur partage donc les rôles autrement :
-
-- **le cœur trade** : c'est le témoin `quant`, à chaque cycle, gratuitement. Il achète une tendance haussière à la taille du modèle de risque et sort quand la tendance se retourne ou que son niveau de sortie est touché ;
-- **le LLM donne une directive bornée**, environ une fois par jour (`llm.max_call_interval_seconds`), plus tôt si un prix bouge de `llm.position_wake_move_pct` (3 %) ou si le palier de risque change, jamais plus souvent que `llm.call_every_seconds` : une **posture** parmi quatre, et s'il le veut la liste des symboles autorisés. Rien d'autre : il choisit un mot, pas un montant.
-
-| Posture | Effet, fixé dans le code (`STANCES` dans `supervisor.py`) |
-|---|---|
-| `offensive` | Taille des positions ×2 (soit environ 2 % de l'equity risqués par position au lieu de 1 %) |
-| `normal` | Le témoin `quant` tel quel. C'est la posture par défaut |
-| `defensive` | Taille des positions ×0,5 |
-| `pause` | Tout est vendu, aucun achat |
-
-Un changement de posture retaille les positions ouvertes. La cible se compare à ce qui est réellement détenu : un ordre raté est retenté au cycle suivant, une part trop petite pour un ordre n'est ni vendue ni rachetée ensuite ; on ne renforce une position que si sa tendance tient toujours. Un symbole écarté est vendu. Chaque ordre passe par les garde-fous comme celui de n'importe quel agent : une taille doublée reste plafonnée par `max_order_pct`, `max_position_pct` et `max_total_exposure_pct`.
-
-Ce que le code garantit, testé :
-
-- **sortir reste toujours possible** : les niveaux de sortie sont vérifiés à chaque cycle, que le LLM réponde ou non. Un appel raté, une réponse invalide, un état illisible en base ou un bug du superviseur ne coûtent pas le cycle : le cœur continue avec la posture en cours, l'échec est journalisé (évènement `error`). Un appel raté est retenté à l'intervalle minimal ; une réponse invalide, payée, attend le lendemain. Le cycle où le superviseur est appelé, les sorties sont vérifiées après sa réponse (jusqu'à deux minutes si l'API est lente). Conséquence à connaître : une panne durable de l'API n'arrête pas le bot (`halted`), il continue comme `quant` ;
-- **une directive vieillit** : non renouvelée pendant deux fois `max_call_interval_seconds` (48 h), elle tombe et le bot revient à `normal`. Un superviseur injoignable ne laisse pas le bot en posture offensive, ni en pause, pour toujours ;
-- cadence et budget comme l'agent `llm` : horodatage écrit avant l'appel, plafonds par jour et au total, palier « économie » ;
-- l'état (directive, niveaux de sortie) est en base : un redémarrage ne perd rien, un `reset` l'efface.
-
-#### Les flux d'information
-
-Le superviseur reçoit, en plus des prix et des modèles, trois flux publics lus par le code (`context.py`), sans clé :
-
-| Flux | Source | Ce qu'il dit |
-|---|---|---|
-| Indice « Fear & Greed » | [alternative.me](https://alternative.me/crypto/fear-and-greed-index/) | L'humeur du marché crypto, de 0 (peur extrême) à 100 (avidité extrême), une valeur par jour, et sa variation sur 7 jours |
-| Taux de financement | Kraken Futures, par ccxt | Ce que paient les acheteurs à effet de levier sur les contrats perpétuels, annualisé, sur 24 h et 7 jours. Élevé et positif : beaucoup d'acheteurs à crédit, marché fragile |
-| Calendrier macro | Dates officielles (federalreserve.gov, bls.gov) écrites dans le code | Nombre de jours avant la prochaine décision de la Fed et la prochaine publication de l'inflation américaine (CPI) |
-
-Règles : rien que des nombres (aucun texte venu de l'extérieur n'entre dans un prompt) ; un flux en panne ou trop vieux est absent, ce n'est jamais une erreur de cycle ; en backtest, une valeur n'est visible qu'une fois publiée (l'indice du jour une heure après minuit UTC, un taux horaire une fois son heure écoulée). L'historique des flux est mis en cache dans `data/history/`, et le backtest affiche ce que chaque flux couvre.
-
-Limites à connaître : le calendrier macro ne couvre que 2026 (à compléter chaque année, sinon il se tait) ; l'historique du taux de financement commence le 2025-10-01 ; l'heure de publication de l'indice et l'unité du taux de financement sont observées sur les données, pas documentées par leurs sources (à vérifier) ; aucune source d'actualités datées n'a pu être vérifiée, il n'y en a donc pas. Ces flux ne servent pour l'instant qu'au superviseur, pas aux modèles.
 
 ## Comment l'agent est tenu
 

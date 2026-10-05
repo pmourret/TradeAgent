@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>body{margin:0;background:#0d1117;color:#e8ecf1;font-family:"IBM Plex Sans",ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;font-size:15px;line-height:1.45}*{box-sizing:border-box}a{color:#4cc9f0}a:hover{color:#e8ecf1}</style>
+</helmet>
+<div data-screen-label="Profil actuel" style="max-width:1240px;margin:0 auto;padding:24px 24px 56px;display:flex;flex-direction:column;gap:20px">
+  <header style="display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px">
+    <div style="display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px">
+      <span style="font-family:'IBM Plex Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-weight:600;font-size:18px;letter-spacing:-0.01em">tradeagent</span>
+      <span style="border:1px solid #2a3441;border-radius:999px;padding:3px 10px;font-size:12px;color:#9ba7b5">Paper trading · argent fictif</span>
+    </div>
+    <div style="display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;font-size:13px;color:#9ba7b5">
+      <span style="background:#1d2631;border-radius:6px;padding:3px 8px;color:#e8ecf1">agent : board</span>
+      <span>Actualisé il y a 6 s</span>
+    </div>
+  </header>
+  <main style="display:flex;flex-direction:column;gap:20px">
+    <section style="display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:14px">
+      <div style="background:#151b23;border:1px solid #2a3441;border-radius:14px;padding:18px;display:flex;flex-direction:column;gap:8px">
+        <div style="font-size:12px;letter-spacing:0.07em;text-transform:uppercase;color:#9ba7b5">État</div>
+        <div style="align-self:flex-start;display:inline-flex;align-items:center;gap:8px;padding:6px 14px;border-radius:999px;font-weight:600;font-size:17px;color:#4cc9f0;background:color-mix(in srgb,#4cc9f0 15%,transparent)"><svg width="16" height="16" viewBox="0 0 16 16"><circle cx="8" cy="8" r="4.5" fill="currentColor"></circle></svg><span>En vie</span></div>
+        <div style="color:#9ba7b5;font-size:13px">Palier normal · 12 j de vie</div>
+      </div>
+      <div style="background:#151b23;border:1px solid #2a3441;border-radius:14px;padding:18px;display:flex;flex-direction:column;gap:8px">
+        <div style="font-size:12px;letter-spacing:0.07em;text-transform:uppercase;color:#9ba7b5">Equity</div>
+        <div style="font-family:'IBM Plex Mono',ui-monospace,Menlo,monospace;font-size:28px;font-weight:500;letter-spacing:-0.02em">1 012,40 €</div>
+        <div style="color:#9ba7b5;font-size:13px">+1,24 % par rapport à la mise de 1 000,00 €</div>
+      </div>
+      <div style="background:#151b23;border:1px solid #2a3441;border-radius:14px;padding:18px;display:flex;flex-direction:column;gap:8px">
+        <div style="font-size:12px;letter-spacing:0.07em;text-transform:uppercase;color:#9ba7b5">Résultat net</div>
+        <div style="font-family:'IBM Plex Mono',ui-monospace,Menlo,monospace;font-size:28px;font-weight:500;letter-spacing:-0.02em">+12,40 €</div>
+        <div style="color:#9ba7b5;font-size:13px">equity moins la mise, frais de trading compris</div>
+      </div>
+      <div style="background:#151b23;border:1px solid #2a3441;border-radius:14px;padding:18px;display:flex;flex-direction:column;gap:8px">
+        <div style="font-size:12px;letter-spacing:0.07em;text-transform:uppercase;color:#9ba7b5">Drawdown</div>
+        <div style="font-family:'IBM Plex Mono',ui-monospace,Menlo,monospace;font-size:28px;font-weight:500;letter-spacing:-0.02em">3,1 %</div>
+        <div style="color:#9ba7b5;font-size:13px">depuis le plus haut : 1 044,80 €</div>
+      </div>
+    </section>
+    <div style="display:flex;flex-wrap:wrap;gap:14px;align-items:stretch">
+      <section style="flex:2 1 560px;min-width:0;background:#151b23;border:1px solid #2a3441;border-radius:14px;padding:18px;display:flex;flex-direction:column;gap:14px">
+        <div style="display:flex;flex-wrap:wrap;justify-content:space-between;align-items:baseline;gap:8px"><h2 style="margin:0;font-size:15px;font-weight:600">Equity depuis la mise</h2><span style="color:#9ba7b5;font-size:13px">12 j · 240 points</span></div>
+        <div style="position:relative;width:100%;aspect-ratio:760/300;min-height:250px;margin-top:4px">
+          <div style="position:absolute;left:7.5%;right:2%;top:4%;bottom:13%">
+            <div style="position:absolute;left:0;right:0;top:38.9%;height:22.3%;background:color-mix(in srgb,#f4c15d 9%,transparent)"><span style="display:block;padding:4px 8px;font-size:10.5px;letter-spacing:0.09em;font-weight:600;color:#f4c15d">PRUDENT</span></div>
+            <div style="position:absolute;left:0;right:0;top:61.2%;height:33.4%;background:color-mix(in srgb,#f07f3c 9%,transparent)"><span style="display:block;padding:4px 8px;font-size:10.5px;letter-spacing:0.09em;font-weight:600;color:#f07f3c">DÉFENSIF</span></div>
+            <div style="position:absolute;left:0;right:0;top:94.6%;height:5.4%;background:color-mix(in srgb,#ff6b7a 9%,transparent)"><span style="display:block;padding:4px 8px;font-size:10.5px;letter-spacing:0.09em;font-weight:600;color:#ff6b7a">MORT</span></div>
+            <div style="position:absolute;left:0;right:0;top:14.9%;border-top:1px solid #2a3441;opacity:0.7"><span style="position:absolute;left:-10px;top:-9px;transform:translateX(-100%);font-family:ui-monospace,Menlo,monospace;font-size:11px;color:#9ba7b5">1000</span></div>
+            <div style="position:absolute;left:0;right:0;top:36.3%;border-top:1px solid #2a3441;opacity:0.7"><span style="position:absolute;left:-10px;top:-9px;transform:translateX(-100%);font-family:ui-monospace,Menlo,monospace;font-size:11px;color:#9ba7b5">900</span></div>
+            <div style="position:absolute;left:0;right:0;top:57.7%;border-top:1px solid #2a3441;opacity:0.7"><span style="position:absolute;left:-10px;top:-9px;transform:translateX(-100%);font-family:ui-monospace,Menlo,monospace;font-size:11px;color:#9ba7b5">800</span></div>
+            <div style="position:absolute;left:0;right:0;top:79.1%;border-top:1px solid #2a3441;opacity:0.7"><span style="position:absolute;left:-10px;top:-9px;transform:translateX(-100%);font-family:ui-monospace,Menlo,monospace;font-size:11px;color:#9ba7b5">700</span></div>
+            <div style="position:absolute;left:0;right:0;top:14.9%;border-top:1.5px dashed #9ba7b5"><span style="position:absolute;right:0;top:-20px;font-size:11px;color:#9ba7b5">mise 1000 €</span></div>
+            <svg viewBox="0 0 100 100" preserveAspectRatio="none" style="position:absolute;inset:0;width:100%;height:100%;overflow:visible">
+              <path d="M0,100 L0,14.93 L4.35,15.36 L8.7,14.29 L13.04,13.01 L17.39,13.65 L21.74,11.73 L26.09,10.24 L30.43,10.87 L34.78,8.95 L39.13,7.46 L43.48,8.31 L47.83,6.39 L52.17,5.36 L56.52,6.82 L60.87,8.52 L65.22,9.8 L69.57,10.87 L73.91,12.16 L78.26,11.51 L82.61,13.01 L86.96,14.08 L91.3,13.22 L95.65,11.73 L100,12.28 L100,100 Z" fill="#4cc9f0" fill-opacity="0.1"></path>
+              <polyline points="0,14.93 4.35,15.36 8.7,14.29 13.04,13.01 17.39,13.65 21.74,11.73 26.09,10.24 30.43,10.87 34.78,8.95 39.13,7.46 43.48,8.31 47.83,6.39 52.17,5.36 56.52,6.82 60.87,8.52 65.22,9.8 69.57,10.87 73.91,12.16 78.26,11.51 82.61,13.01 86.96,14.08 91.3,13.22 95.65,11.73 100,12.28" fill="none" stroke="#4cc9f0" stroke-width="2.25" vector-effect="non-scaling-stroke" stroke-linejoin="round"></polyline>
+            </svg>
+            <div style="position:absolute;left:100%;top:12.28%;width:12px;height:12px;border-radius:50%;transform:translate(-50%,-50%);border:2px solid #151b23;background:#4cc9f0"></div>
+            <span style="position:absolute;top:calc(100% + 10px);left:8%;transform:translateX(-50%);font-family:ui-monospace,Menlo,monospace;font-size:11px;color:#9ba7b5">24/9</span>
+            <span style="position:absolute;top:calc(100% + 10px);left:33%;transform:translateX(-50%);font-family:ui-monospace,Menlo,monospace;font-size:11px;color:#9ba7b5">27/9</span>
+            <span style="position:absolute;top:calc(100% + 10px);left:58%;transform:translateX(-50%);font-family:ui-monospace,Menlo,monospace;font-size:11px;color:#9ba7b5">30/9</span>
+            <span style="position:absolute;top:calc(100% + 10px);left:83%;transform:translateX(-50%);font-family:ui-monospace,Menlo,monospace;font-size:11px;color:#9ba7b5">3/10</span>
+          </div>
+        </div>
+      </section>
+      <div style="flex:1 1 290px;min-width:0;display:flex;flex-direction:column;gap:14px">
+        <section style="background:#151b23;border:1px solid #2a3441;border-radius:14px;padding:18px;display:flex;flex-direction:column;gap:14px">
+          <h2 style="margin:0;font-size:15px;font-weight:600">Distance à la mort</h2>
+          <div style="position:relative;padding-bottom:46px">
+            <div style="display:flex;height:14px;border-radius:7px;overflow:hidden;background:#1d2631"><div style="width:37.5%;background:color-mix(in srgb,#4cc9f0 22%,transparent)"></div><div style="width:25%;background:color-mix(in srgb,#f4c15d 30%,transparent)"></div><div style="width:37.5%;background:color-mix(in srgb,#f07f3c 34%,transparent)"></div></div>
+            <div style="position:absolute;left:0;top:0;height:14px;width:7.75%;border-radius:7px;background:#4cc9f0"></div>
+            <div style="position:absolute;top:0;left:37.5%;height:14px;border-left:2px solid #0d1117"></div>
+            <div style="position:absolute;top:0;left:62.5%;height:14px;border-left:2px solid #0d1117"></div>
+            <div style="position:absolute;top:22px;left:37.5%;transform:translateX(-50%);text-align:center;font-size:12px;line-height:1.25;color:#9ba7b5"><b style="display:block;color:#e8ecf1;font-weight:600">Prudent</b><span style="font-family:ui-monospace,Menlo,monospace">15 %</span></div>
+            <div style="position:absolute;top:22px;left:62.5%;transform:translateX(-50%);text-align:center;font-size:12px;line-height:1.25;color:#9ba7b5"><b style="display:block;color:#e8ecf1;font-weight:600">Défensif</b><span style="font-family:ui-monospace,Menlo,monospace">25 %</span></div>
+            <div style="position:absolute;top:22px;left:100%;transform:translateX(-100%);text-align:center;font-size:12px;line-height:1.25;color:#9ba7b5"><b style="display:block;color:#e8ecf1;font-weight:600">Mort</b><span style="font-family:ui-monospace,Menlo,monospace">40 %</span></div>
+          </div>
+          <p style="margin:0;color:#9ba7b5;font-size:13px">Drawdown actuel : 3,1 % depuis le plus haut (1 044,80 €). Mort sous 626,88 € d'equity nette.</p>
+        </section>
+        <section style="background:#151b23;border:1px solid #2a3441;border-radius:14px;padding:18px;display:flex;flex-direction:column;gap:14px">
+          <h2 style="margin:0;font-size:15px;font-weight:600">Aujourd'hui</h2>
+          <div style="display:flex;flex-direction:column;gap:10px;font-size:14px">
+            <div style="display:flex;justify-content:space-between;gap:12px"><span style="color:#9ba7b5">Variation du jour</span><span style="font-family:ui-monospace,Menlo,monospace">−4,10 € (−0,40 %)</span></div>
+            <div style="display:flex;justify-content:space-between;gap:12px"><span style="color:#9ba7b5">Plafond de perte</span><span style="font-family:ui-monospace,Menlo,monospace">−5 %</span></div>
+            <div style="display:flex;justify-content:space-between;gap:12px"><span style="color:#9ba7b5">Achats aujourd'hui</span><span style="font-family:ui-monospace,Menlo,monospace">1 / 6</span></div>
+          </div>
+        </section>
+      </div>
+    </div>
+    <div style="display:flex;flex-wrap:wrap;gap:14px;align-items:stretch">
+      <section style="flex:3 1 480px;min-width:0;background:#151b23;border:1px solid #2a3441;border-radius:14px;padding:18px;display:flex;flex-direction:column;gap:14px">
+        <h2 style="margin:0;font-size:15px;font-weight:600">Portefeuille</h2>
+        <div style="display:flex;height:12px;border-radius:6px;overflow:hidden;gap:2px"><div style="width:12.1%;background:#a58bfa"></div><div style="width:18.5%;background:#5fd4b8"></div><div style="width:69.4%;background:#566275"></div></div>
+        <div style="display:flex;flex-direction:column">
+          <div style="display:grid;grid-template-columns:1.3fr 1fr 1fr 1fr 0.7fr;gap:12px;padding:0 0 8px;font-size:12px;letter-spacing:0.06em;text-transform:uppercase;color:#9ba7b5;border-bottom:1px solid #2a3441"><span>Actif</span><span style="text-align:right">Quantité</span><span style="text-align:right">Prix</span><span style="text-align:right">Valeur</span><span style="text-align:right">Part</span></div>
+          <div style="display:grid;grid-template-columns:1.3fr 1fr 1fr 1fr 0.7fr;gap:12px;padding:11px 0;border-bottom:1px solid #2a3441;font-family:ui-monospace,Menlo,monospace;font-size:13.5px"><span style="display:flex;align-items:center;gap:8px;font-family:system-ui,sans-serif;font-weight:500"><span style="width:10px;height:10px;border-radius:3px;background:#a58bfa"></span>BTC/EUR</span><span style="text-align:right">0,0021</span><span style="text-align:right">58 420 €</span><span style="text-align:right">122,68 €</span><span style="text-align:right">12 %</span></div>
+          <div style="display:grid;grid-template-columns:1.3fr 1fr 1fr 1fr 0.7fr;gap:12px;padding:11px 0;border-bottom:1px solid #2a3441;font-family:ui-monospace,Menlo,monospace;font-size:13.5px"><span style="display:flex;align-items:center;gap:8px;font-family:system-ui,sans-serif;font-weight:500"><span style="width:10px;height:10px;border-radius:3px;background:#5fd4b8"></span>ETH/EUR</span><span style="text-align:right">0,081</span><span style="text-align:right">2 310,00 €</span><span style="text-align:right">187,11 €</span><span style="text-align:right">18 %</span></div>
+          <div style="display:grid;grid-template-columns:1.3fr 1fr 1fr 1fr 0.7fr;gap:12px;padding:11px 0;border-bottom:1px solid #2a3441;font-family:ui-monospace,Menlo,monospace;font-size:13.5px"><span style="display:flex;align-items:center;gap:8px;font-family:system-ui,sans-serif;font-weight:500"><span style="width:10px;height:10px;border-radius:3px;background:#566275"></span>Cash EUR</span><span style="text-align:right">702,61</span><span style="text-align:right">—</span><span style="text-align:right">702,61 €</span><span style="text-align:right">69 %</span></div>
+        </div>
+        <div>
+          <div style="color:#9ba7b5;font-size:13px;margin-bottom:8px">Board : ce que réclament les sous-agents</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr 1fr 0.7fr;gap:12px;padding:0 0 8px;font-size:12px;letter-spacing:0.06em;text-transform:uppercase;color:#9ba7b5;border-bottom:1px solid #2a3441"><span>Sous-agent</span><span>Actif</span><span style="text-align:right">Quantité</span><span style="text-align:right">Valeur</span><span style="text-align:right">Sortie à</span><span style="text-align:right">Marge</span></div>
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr 1fr 0.7fr;gap:12px;padding:11px 0;border-bottom:1px solid #2a3441;font-family:ui-monospace,Menlo,monospace;font-size:13.5px"><span>trend</span><span>BTC/EUR</span><span style="text-align:right">0,0021</span><span style="text-align:right">122,68 €</span><span style="text-align:right">55 300 €</span><span style="text-align:right">+5,6 %</span></div>
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr 1fr 0.7fr;gap:12px;padding:11px 0;border-bottom:1px solid #2a3441;font-family:ui-monospace,Menlo,monospace;font-size:13.5px"><span>trend</span><span>ETH/EUR</span><span style="text-align:right">0,081</span><span style="text-align:right">187,11 €</span><span style="text-align:right">2 240,00 €</span><span style="text-align:right">+3,1 %</span></div>
+        </div>
+      </section>
+    </div>
+    <div style="display:flex;flex-wrap:wrap;gap:14px;align-items:stretch">
+      <section style="flex:3 1 480px;min-width:0;background:#151b23;border:1px solid #2a3441;border-radius:14px;padding:18px;display:flex;flex-direction:column;gap:14px">
+        <div style="display:flex;flex-wrap:wrap;justify-content:space-between;align-items:baseline;gap:8px"><h2 style="margin:0;font-size:15px;font-weight:600">Journal des décisions</h2><span style="color:#9ba7b5;font-size:13px">attentes regroupées · 1 168 décisions · 9 exécutions</span></div>
+        <div style="display:grid;grid-template-columns:92px 150px 1.25fr 1fr;gap:14px;padding:0 0 8px;font-size:12px;letter-spacing:0.06em;text-transform:uppercase;color:#9ba7b5;border-bottom:1px solid #2a3441"><span>Heure</span><span>Décision</span><span>Verdict du code</span><span>Raison donnée par l'agent</span></div>
+        <div style="display:grid;grid-template-columns:92px 150px 1.25fr 1fr;gap:14px;padding:11px 0;border-bottom:1px solid #2a3441;font-size:13.5px;align-items:start"><span style="font-family:ui-monospace,Menlo,monospace;color:#9ba7b5;font-size:13px">lun. 18:30</span><span style="display:flex;flex-direction:column;gap:3px"><b style="font-weight:600">Attente</b><span style="font-family:ui-monospace,Menlo,monospace;color:#9ba7b5;font-size:13px">6 fois, depuis lun. 17:15</span></span><span><span style="padding:2px 9px;border-radius:999px;font-size:12px;font-weight:600;color:#9ba7b5;background:color-mix(in srgb,#9ba7b5 15%,transparent)">Aucun ordre</span></span><span style="color:#9ba7b5">cibles inchangées, rien à trader</span></div>
+        <div style="display:grid;grid-template-columns:92px 150px 1.25fr 1fr;gap:14px;padding:11px 0;border-bottom:1px solid #2a3441;font-size:13.5px;align-items:start"><span style="font-family:ui-monospace,Menlo,monospace;color:#9ba7b5;font-size:13px">lun. 17:00</span><span style="display:flex;flex-direction:column;gap:3px"><b style="font-weight:600">Achat</b><span style="font-family:ui-monospace,Menlo,monospace;color:#9ba7b5;font-size:13px">ETH/EUR · 187,11 €</span></span><span style="display:flex;flex-direction:column;gap:3px"><span style="align-self:flex-start;padding:2px 9px;border-radius:999px;font-size:12px;font-weight:600;color:#4cc9f0;background:color-mix(in srgb,#4cc9f0 15%,transparent)">Exécuté</span></span><span style="color:#9ba7b5">trend : régime haussier sur ETH/EUR, sortie à 2 240 €</span></div>
+        <div style="display:grid;grid-template-columns:92px 150px 1.25fr 1fr;gap:14px;padding:11px 0;border-bottom:1px solid #2a3441;font-size:13.5px;align-items:start"><span style="font-family:ui-monospace,Menlo,monospace;color:#9ba7b5;font-size:13px">dim. 09:45</span><span style="display:flex;flex-direction:column;gap:3px"><b style="font-weight:600">Achat</b><span style="font-family:ui-monospace,Menlo,monospace;color:#9ba7b5;font-size:13px">BTC/EUR · 160,00 €</span></span><span style="display:flex;flex-direction:column;gap:3px"><span style="align-self:flex-start;padding:2px 9px;border-radius:999px;font-size:12px;font-weight:600;color:#4cc9f0;background:color-mix(in srgb,#4cc9f0 15%,transparent)">Exécuté</span><span style="color:#9ba7b5;font-size:13px">réduit à 122,70 € (max_order_pct)</span></span><span style="color:#9ba7b5">trend : régime haussier sur BTC/EUR, sortie à 55 300 €</span></div>
+      </section>
+      <section style="flex:1 1 290px;min-width:0;background:#151b23;border:1px solid #2a3441;border-radius:14px;padding:18px;display:flex;flex-direction:column;gap:14px">
+        <h2 style="margin:0;font-size:15px;font-weight:600">Évènements</h2>
+        <div style="display:flex;flex-direction:column;gap:14px">
+          <div style="display:flex;flex-direction:column;gap:3px"><div style="display:flex;align-items:center;gap:8px;font-size:12px;color:#9ba7b5"><span style="padding:1px 8px;border-radius:999px;font-weight:600;color:#4cc9f0;background:color-mix(in srgb,#4cc9f0 15%,transparent)">info</span><span style="font-family:ui-monospace,Menlo,monospace">lun. 17:00</span></div><div>Ordre exécuté : achat ETH/EUR 187,11 €</div></div>
+          <div style="display:flex;flex-direction:column;gap:3px"><div style="display:flex;align-items:center;gap:8px;font-size:12px;color:#9ba7b5"><span style="padding:1px 8px;border-radius:999px;font-weight:600;color:#f4c15d;background:color-mix(in srgb,#f4c15d 15%,transparent)">alerte</span><span style="font-family:ui-monospace,Menlo,monospace">sam. 03:15 · ×3 depuis sam. 02:45</span></div><div>Flux de prix indisponible, cycle ignoré</div></div>
+        </div>
+      </section>
+    </div>
+  </main>
+  <footer style="display:flex;flex-direction:column;gap:4px;padding-top:4px;color:#9ba7b5;font-size:13px">
+    <span>Lecture seule · actualisation automatique toutes les 15 s · heures dans le fuseau de ton navigateur.</span>
+    <span>Reprendre un bot arrêté ou repartir d'une nouvelle vie reste volontairement en ligne de commande : <code>tradeagent resume</code> · <code>tradeagent reset</code></span>
+  </footer>
+</div>
+</x-dc>
+</body>
+</html>

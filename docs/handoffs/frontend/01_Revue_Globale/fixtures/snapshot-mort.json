@@ -1,0 +1,246 @@
+{
+  "has_data": true,
+  "generated_at": 1791218241,
+  "mode": "paper",
+  "exchange": "bitvavo",
+  "quote_currency": "EUR",
+  "symbols": [
+    "BTC/EUR",
+    "ETH/EUR"
+  ],
+  "cycle_seconds": 900,
+  "thresholds": {
+    "cautious_drawdown_pct": 15,
+    "defensive_drawdown_pct": 25,
+    "max_drawdown_pct": 40,
+    "max_total_loss_pct": 50,
+    "max_daily_loss_pct": 5,
+    "max_buys_per_day": 6
+  },
+  "agent": "board",
+  "status": {
+    "state": "dead",
+    "reason": "drawdown de 40,3 %, seuil de 40 % atteint",
+    "since": 1790943300
+  },
+  "risk_tier": "defensive",
+  "life": {
+    "stake": 1000,
+    "started": 1790158500
+  },
+  "money": {
+    "equity": 624.1,
+    "net_equity": 624.1,
+    "cash": 624.1,
+    "stake": 1000,
+    "change_pct": -37.59,
+    "api_spent_life": 0,
+    "net_result": -375.9,
+    "peak_equity": 1044.8,
+    "drawdown_pct": 40.266079632465534,
+    "death_floor": 500,
+    "last_update": 1790943300,
+    "tier_lines": {
+      "cautious": 888.08,
+      "defensive": 783.6,
+      "death": 626.88
+    }
+  },
+  "day": {
+    "date": "2026-10-05",
+    "start_equity": 686.4,
+    "pnl": -62.3,
+    "pnl_pct": -9.08,
+    "buys": 0,
+    "trades": 2
+  },
+  "advice": null,
+  "positions": [
+    {
+      "symbol": "BTC/EUR",
+      "quantity": 0,
+      "price": 58420,
+      "value": 0,
+      "share_pct": 0
+    },
+    {
+      "symbol": "ETH/EUR",
+      "quantity": 0,
+      "price": 2310,
+      "value": 0,
+      "share_pct": 0
+    }
+  ],
+  "board": [],
+  "equity_series": [
+    [
+      1790167041,
+      1000
+    ],
+    [
+      1790212740,
+      998
+    ],
+    [
+      1790258439,
+      1003
+    ],
+    [
+      1790304138,
+      1009
+    ],
+    [
+      1790349838,
+      1006
+    ],
+    [
+      1790395537,
+      1015
+    ],
+    [
+      1790441236,
+      1022
+    ],
+    [
+      1790486935,
+      1019
+    ],
+    [
+      1790532634,
+      1028
+    ],
+    [
+      1790578333,
+      1035
+    ],
+    [
+      1790624032,
+      1031
+    ],
+    [
+      1790669731,
+      1040
+    ],
+    [
+      1790715431,
+      1044.8
+    ],
+    [
+      1790761130,
+      1006.55
+    ],
+    [
+      1790806829,
+      972.31
+    ],
+    [
+      1790852528,
+      927.06
+    ],
+    [
+      1790898227,
+      896.82
+    ],
+    [
+      1790943926,
+      851.57
+    ],
+    [
+      1790989625,
+      818.33
+    ],
+    [
+      1791035324,
+      773.08
+    ],
+    [
+      1791081024,
+      740.84
+    ],
+    [
+      1791126723,
+      699.59
+    ],
+    [
+      1791172422,
+      663.35
+    ],
+    [
+      1791218121,
+      624.1
+    ]
+  ],
+  "api": {
+    "provider": "anthropic",
+    "model": "claude-haiku-4-5",
+    "calls_life": 0,
+    "spent_life": 0,
+    "spent_total": 0,
+    "spent_today": 0,
+    "daily_budget": 0.25,
+    "total_budget": 10,
+    "call_every_seconds": 3600,
+    "last_call": null,
+    "next_call": null,
+    "wake_if_move_pct": null,
+    "prompt_version": null,
+    "min_interval_seconds": 3600,
+    "idle_since": null,
+    "per_day": []
+  },
+  "journal": [
+    {
+      "id": 868,
+      "ts": 1790943300,
+      "agent": "board",
+      "action": "sell",
+      "symbol": "ETH/EUR",
+      "amount_quote": 151.2,
+      "approved": 1,
+      "verdict": "",
+      "reasoning": "liquidation demandée par le kill switch"
+    },
+    {
+      "id": 867,
+      "ts": 1790943300,
+      "agent": "board",
+      "action": "sell",
+      "symbol": "BTC/EUR",
+      "amount_quote": 98.7,
+      "approved": 1,
+      "verdict": "",
+      "reasoning": "liquidation demandée par le kill switch"
+    },
+    {
+      "id": 866,
+      "ts": 1790920800,
+      "agent": "board",
+      "action": "buy",
+      "symbol": "BTC/EUR",
+      "amount_quote": 40,
+      "approved": 0,
+      "verdict": "refusé : palier défensif, achats bloqués",
+      "reasoning": "trend : régime haussier sur BTC/EUR"
+    }
+  ],
+  "fills": [],
+  "events": [
+    {
+      "id": 90,
+      "ts": 1790943300,
+      "level": "critical",
+      "message": "Kill switch : drawdown de 40,3 %, seuil de 40 % atteint. Liquidation demandée."
+    },
+    {
+      "id": 80,
+      "ts": 1790813700,
+      "level": "warning",
+      "message": "Passage au palier défensif (drawdown 25,4 %)"
+    }
+  ],
+  "counts": {
+    "decisions": 868,
+    "fills": 9,
+    "llm_calls": 0
+  }
+}

@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="_ds/nocturne-97cc5831-dc5b-4859-aaba-a8c3148f3b91/styles.css">
+<script src="_ds/nocturne-97cc5831-dc5b-4859-aaba-a8c3148f3b91/_ds_bundle.js"></script>
+<style>html,body{margin:0;background:#10111b}</style>
+</helmet>
+<div style="display:flex;flex-direction:column;gap:40px;padding:40px;align-items:flex-start">
+  <sc-for list="{{ caps }}" as="c" hint-placeholder-count="20">
+    <div id="{{ c.id }}" style="flex:none;width:{{ c.w }}">
+      <dc-import name="Profil Conseil" etat="{{ c.etat }}" palier="{{ c.palier }}" contexte="{{ c.ctx }}" demo-arrivee="{{ c.arr }}" hint-size="100%,1200px"></dc-import>
+    </div>
+  </sc-for>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  renderVals() {
+    const c = (id, w, etat = 'vie', palier = 'normal', ctx = 'web', arr = false) => ({id, w, etat, palier, ctx, arr});
+    return { caps: [
+      c('profil-bureau', '1280px'), c('profil-tablette', '834px'), c('profil-telephone', '390px'),
+      c('profil-bureau-arrivee', '1280px', 'vie', 'normal', 'web', true), c('profil-telephone-arrivee', '390px', 'vie', 'normal', 'web', true),
+      c('palier-prudent-bureau', '1280px', 'vie', 'prudent'), c('palier-defensif-bureau', '1280px', 'vie', 'defensif'), c('palier-defensif-telephone', '390px', 'vie', 'defensif'),
+      c('etat-mort-bureau', '1280px', 'mort'), c('etat-mort-telephone', '390px', 'mort'),
+      c('etat-arrete-bureau', '1280px', 'arrete'), c('etat-arrete-telephone', '390px', 'arrete'),
+      c('etat-muet-bureau', '1280px', 'muet'), c('etat-muet-telephone', '390px', 'muet'),
+      c('etat-horsligne-bureau', '1280px', 'horsligne'), c('etat-horsligne-telephone', '390px', 'horsligne'),
+      c('etat-vide-bureau', '1280px', 'vide'), c('etat-vide-telephone', '390px', 'vide'),
+      c('electron-480', '480px', 'vie', 'normal', 'electron'), c('electron-720', '720px', 'vie', 'prudent', 'electron'),
+      c('electron-1024', '1024px', 'vie', 'normal', 'electron'), c('electron-1600', '1600px', 'vie', 'defensif', 'electron')
+    ]};
+  }
+}
+</script>
+</body>
+</html>

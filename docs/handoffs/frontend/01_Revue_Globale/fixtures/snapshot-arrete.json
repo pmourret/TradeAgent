@@ -1,0 +1,335 @@
+{
+  "has_data": true,
+  "generated_at": 1791218241,
+  "mode": "paper",
+  "exchange": "bitvavo",
+  "quote_currency": "EUR",
+  "symbols": [
+    "BTC/EUR",
+    "ETH/EUR"
+  ],
+  "cycle_seconds": 900,
+  "thresholds": {
+    "cautious_drawdown_pct": 15,
+    "defensive_drawdown_pct": 25,
+    "max_drawdown_pct": 40,
+    "max_total_loss_pct": 50,
+    "max_daily_loss_pct": 5,
+    "max_buys_per_day": 6
+  },
+  "agent": "board",
+  "status": {
+    "state": "halted",
+    "reason": "5 erreurs d’affilée : flux de prix indisponible",
+    "since": 1791211500
+  },
+  "risk_tier": "normal",
+  "life": {
+    "stake": 1000,
+    "started": 1790167041
+  },
+  "money": {
+    "equity": 1003.2,
+    "net_equity": 1003.2,
+    "cash": 693.41,
+    "stake": 1000,
+    "change_pct": 0.32000000000000917,
+    "api_spent_life": 0,
+    "net_result": 3.2000000000000455,
+    "peak_equity": 1044.8,
+    "drawdown_pct": 3.9816232771822224,
+    "death_floor": 500,
+    "last_update": 1791211500,
+    "tier_lines": {
+      "cautious": 888.08,
+      "defensive": 783.6,
+      "death": 626.88
+    }
+  },
+  "day": {
+    "date": "2026-10-05",
+    "start_equity": 1007.3000000000001,
+    "pnl": -4.1,
+    "pnl_pct": -0.4,
+    "buys": 1,
+    "trades": 1
+  },
+  "advice": null,
+  "positions": [
+    {
+      "symbol": "BTC/EUR",
+      "quantity": 0.0021,
+      "price": 58420,
+      "value": 122.68,
+      "share_pct": 12.228867623604465
+    },
+    {
+      "symbol": "ETH/EUR",
+      "quantity": 0.081,
+      "price": 2310,
+      "value": 187.11,
+      "share_pct": 18.651315789473685
+    }
+  ],
+  "board": [
+    {
+      "sleeve": "trend",
+      "symbol": "BTC/EUR",
+      "quantity": 0.0021,
+      "stop": 55300,
+      "value": 122.68,
+      "stop_margin_pct": 4.2
+    },
+    {
+      "sleeve": "trend",
+      "symbol": "ETH/EUR",
+      "quantity": 0.081,
+      "stop": 2240,
+      "value": 187.11,
+      "stop_margin_pct": 1.9
+    }
+  ],
+  "equity_series": [
+    [
+      1790167041,
+      1000
+    ],
+    [
+      1790212740,
+      998
+    ],
+    [
+      1790258439,
+      1003
+    ],
+    [
+      1790304138,
+      1009
+    ],
+    [
+      1790349838,
+      1006
+    ],
+    [
+      1790395537,
+      1015
+    ],
+    [
+      1790441236,
+      1022
+    ],
+    [
+      1790486935,
+      1019
+    ],
+    [
+      1790532634,
+      1028
+    ],
+    [
+      1790578333,
+      1035
+    ],
+    [
+      1790624032,
+      1031
+    ],
+    [
+      1790669731,
+      1040
+    ],
+    [
+      1790715431,
+      1044.8
+    ],
+    [
+      1790761130,
+      1041.02
+    ],
+    [
+      1790806829,
+      1041.24
+    ],
+    [
+      1790852528,
+      1030.45
+    ],
+    [
+      1790898227,
+      1034.67
+    ],
+    [
+      1790943926,
+      1023.89
+    ],
+    [
+      1790989625,
+      1025.11
+    ],
+    [
+      1791035324,
+      1014.33
+    ],
+    [
+      1791081024,
+      1016.55
+    ],
+    [
+      1791126723,
+      1009.76
+    ],
+    [
+      1791172422,
+      1007.98
+    ],
+    [
+      1791218121,
+      1003.2
+    ]
+  ],
+  "api": {
+    "provider": "anthropic",
+    "model": "claude-haiku-4-5",
+    "calls_life": 0,
+    "spent_life": 0,
+    "spent_total": 0,
+    "spent_today": 0,
+    "daily_budget": 0.25,
+    "total_budget": 10,
+    "call_every_seconds": 3600,
+    "last_call": null,
+    "next_call": null,
+    "wake_if_move_pct": null,
+    "prompt_version": null,
+    "min_interval_seconds": 3600,
+    "idle_since": null,
+    "per_day": []
+  },
+  "journal": [
+    {
+      "id": 1168,
+      "ts": 1791217800,
+      "agent": "board",
+      "action": "hold",
+      "symbol": null,
+      "amount_quote": null,
+      "approved": null,
+      "verdict": "",
+      "reasoning": "trend : cibles inchangées, rien à trader"
+    },
+    {
+      "id": 1167,
+      "ts": 1791216900,
+      "agent": "board",
+      "action": "hold",
+      "symbol": null,
+      "amount_quote": null,
+      "approved": null,
+      "verdict": "",
+      "reasoning": "trend : cibles inchangées, rien à trader"
+    },
+    {
+      "id": 1166,
+      "ts": 1791216000,
+      "agent": "board",
+      "action": "hold",
+      "symbol": null,
+      "amount_quote": null,
+      "approved": null,
+      "verdict": "",
+      "reasoning": "trend : cibles inchangées, rien à trader"
+    },
+    {
+      "id": 1165,
+      "ts": 1791215100,
+      "agent": "board",
+      "action": "hold",
+      "symbol": null,
+      "amount_quote": null,
+      "approved": null,
+      "verdict": "",
+      "reasoning": "trend : cibles inchangées, rien à trader"
+    },
+    {
+      "id": 1164,
+      "ts": 1791214200,
+      "agent": "board",
+      "action": "hold",
+      "symbol": null,
+      "amount_quote": null,
+      "approved": null,
+      "verdict": "",
+      "reasoning": "trend : cibles inchangées, rien à trader"
+    },
+    {
+      "id": 1163,
+      "ts": 1791213300,
+      "agent": "board",
+      "action": "hold",
+      "symbol": null,
+      "amount_quote": null,
+      "approved": null,
+      "verdict": "",
+      "reasoning": "trend : cibles inchangées, rien à trader"
+    },
+    {
+      "id": 1162,
+      "ts": 1791212400,
+      "agent": "board",
+      "action": "buy",
+      "symbol": "ETH/EUR",
+      "amount_quote": 187.11,
+      "approved": 1,
+      "verdict": "",
+      "reasoning": "trend : régime haussier sur ETH/EUR, sortie à 2 240 €"
+    },
+    {
+      "id": 1161,
+      "ts": 1791099900,
+      "agent": "board",
+      "action": "buy",
+      "symbol": "BTC/EUR",
+      "amount_quote": 160,
+      "approved": 1,
+      "verdict": "réduit à 122,70 € : plafond d’ordre",
+      "reasoning": "trend : régime haussier sur BTC/EUR, sortie à 55 300 €"
+    },
+    {
+      "id": 1160,
+      "ts": 1791029700,
+      "agent": "board",
+      "action": "sell",
+      "symbol": "BTC/EUR",
+      "amount_quote": 98.4,
+      "approved": 1,
+      "verdict": "",
+      "reasoning": "trend : BTC/EUR sous son niveau de sortie"
+    }
+  ],
+  "fills": [],
+  "events": [
+    {
+      "id": 52,
+      "ts": 1791211500,
+      "level": "critical",
+      "message": "5 erreurs d’affilée : bot arrêté sans liquidation"
+    },
+    {
+      "id": 51,
+      "ts": 1791211500,
+      "level": "error",
+      "message": "Flux de prix indisponible : délai dépassé"
+    },
+    {
+      "id": 50,
+      "ts": 1791210600,
+      "level": "error",
+      "message": "Flux de prix indisponible : délai dépassé"
+    }
+  ],
+  "counts": {
+    "decisions": 1168,
+    "fills": 9,
+    "llm_calls": 0
+  }
+}

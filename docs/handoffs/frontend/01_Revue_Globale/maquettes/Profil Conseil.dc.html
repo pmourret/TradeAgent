@@ -1,0 +1,429 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="_ds/nocturne-97cc5831-dc5b-4859-aaba-a8c3148f3b91/styles.css">
+<script src="_ds/nocturne-97cc5831-dc5b-4859-aaba-a8c3148f3b91/_ds_bundle.js"></script>
+<style>
+a{color:var(--color-accent-300);text-decoration:none}a:hover{color:var(--color-accent-200);text-decoration:underline}
+[data-theme]{--tone-warn:oklch(0.82 0.11 85);--tone-orange:oklch(0.74 0.13 52);--tone-dead:oklch(0.70 0.14 22);--tone-warn-ink:oklch(0.86 0.09 85);--tone-orange-ink:oklch(0.82 0.10 52);--tone-dead-ink:oklch(0.80 0.10 22)}
+[data-theme="light"]{--color-bg:#f3f4fa;--color-surface:#fcfcff;--color-text:#1d1f2b;--color-accent:#6a5db3;--color-divider:color-mix(in srgb,#1d1f2b 14%,transparent);
+--color-neutral-100:#292b31;--color-neutral-200:#3f424d;--color-neutral-300:#4d5160;--color-neutral-400:#5d6172;--color-neutral-500:#6a6e80;--color-neutral-600:#9397ab;--color-neutral-700:#c4c8da;--color-neutral-800:#dde0ee;--color-neutral-900:#e9ebf5;
+--color-accent-100:#2b2741;--color-accent-200:#423a6a;--color-accent-300:#54498a;--color-accent-400:#796cbf;--color-accent-500:#968ae0;--color-accent-600:#b5abfc;--color-accent-700:#d2cefd;--color-accent-800:#e7e5fe;--color-accent-900:#f2f0ff;
+--shadow-sm:0 0 0 1px #dde0ee;--shadow-md:0 0 0 1px #d3d6e6,0 6px 18px rgba(30,32,60,0.08);
+--tone-warn:oklch(0.62 0.12 75);--tone-orange:oklch(0.58 0.15 45);--tone-dead:oklch(0.54 0.17 22);--tone-warn-ink:oklch(0.47 0.10 75);--tone-orange-ink:oklch(0.48 0.13 45);--tone-dead-ink:oklch(0.46 0.15 22)}
+@keyframes ta-flash{0%{opacity:.95}100%{opacity:0}}
+@keyframes ta-enter{0%{opacity:0;transform:translateY(-8px)}100%{opacity:1;transform:none}}
+@keyframes ta-halo{0%{transform:scale(1);opacity:.7}100%{transform:scale(2.4);opacity:0}}
+@keyframes ta-travel{0%{left:0%;opacity:0}12%{opacity:1}88%{opacity:1}100%{left:100%;opacity:0}}
+@keyframes ta-travel-y{0%{top:0%;opacity:0}12%{opacity:1}88%{opacity:1}100%{top:100%;opacity:0}}
+@keyframes ta-out{0%{transform:translateX(0);opacity:1}100%{transform:translateX(6px);opacity:.2}}
+@keyframes ta-blink{0%,100%{opacity:1}50%{opacity:.35}}
+@keyframes ta-ping{0%{transform:scale(1);opacity:.8}70%,100%{transform:scale(2.6);opacity:0}}
+@keyframes ta-tremble{0%,100%{transform:translateY(0)}50%{transform:translateY(-1px)}}
+[data-theme]{--tone-gain:oklch(0.80 0.14 155);--tone-loss:oklch(0.72 0.16 25)}
+[data-sign="pos"]{color:var(--tone-gain) !important}[data-sign="neg"]{color:var(--tone-loss) !important}
+[data-dim="off"]{opacity:.62;filter:saturate(.4)}[data-dim="dead"]{filter:saturate(.6)}
+[data-rm="1"] [data-anim]{animation:none !important;transition:none !important}
+@media (prefers-reduced-motion: reduce){[data-anim]{animation:none !important;transition:none !important}}
+</style>
+</helmet>
+<div ref="{{ rootRef }}" data-mode="{{ mode }}" data-theme="{{ theme }}" data-rm="{{ rm }}" data-screen-label="Profil" style="position:relative;overflow:hidden;container-type:inline-size;background:var(--color-bg);color:var(--color-text);font-family:var(--font-body);font-size:14px;line-height:1.5;min-height:100%">
+  <sc-if value="{{ moodPrudent }}"><div style="position:absolute;inset:0;pointer-events:none;background:linear-gradient(to bottom,color-mix(in srgb,var(--tone-warn) 9%,transparent),transparent 460px)"></div></sc-if>
+  <sc-if value="{{ moodDefensif }}"><div style="position:absolute;inset:0;pointer-events:none;background:linear-gradient(to bottom,color-mix(in srgb,var(--tone-orange) 13%,transparent),transparent 560px)"></div></sc-if>
+  <sc-if value="{{ moodDead }}"><div style="position:absolute;inset:0;pointer-events:none;background:linear-gradient(to bottom,color-mix(in srgb,var(--tone-dead) 10%,transparent),transparent 380px)"></div></sc-if>
+  <sc-if value="{{ moodHalted }}"><div style="position:absolute;inset:0;pointer-events:none;background:repeating-linear-gradient(135deg,color-mix(in srgb,var(--tone-orange) 5%,transparent) 0 14px,transparent 14px 28px)"></div></sc-if>
+
+  <div style="position:relative;height:3px;background:var(--color-neutral-900)">
+    <sc-if value="{{ barLive }}" hint-placeholder-val="{{ true }}"><div data-anim="" style="height:3px;width:{{ progressPct }};background:var(--color-accent);transition:width .25s linear"></div></sc-if>
+    <sc-if value="{{ barLate }}"><div style="height:3px;width:100%;background:repeating-linear-gradient(90deg,var(--tone-warn) 0 10px,transparent 10px 16px)"></div></sc-if>
+    <sc-if value="{{ barFrozen }}"><div style="height:3px;width:{{ progressPct }};background:var(--color-neutral-600)"></div></sc-if>
+  </div>
+
+  <div style="position:relative;display:flex;flex-direction:column">
+    <header style="display:flex;flex-wrap:wrap;align-items:center;gap:8px 18px;padding:14px clamp(16px,2.4cqi,28px)">
+      <span style="font-size:15px;font-weight:600;letter-spacing:0.01em">tradeagent</span>
+      <sc-if value="{{ isWeb }}" hint-placeholder-val="{{ true }}"><nav aria-label="Fil d'Ariane" style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--color-neutral-500)"><a href="#" style="display:inline-flex;align-items:center;min-height:clamp(32px,calc(56px - 2cqi),44px)">Profils</a><span aria-hidden="true">/</span><span style="color:var(--color-text)">board</span></nav></sc-if>
+      <sc-if value="{{ isElectron }}"><span style="font-size:13px;color:var(--color-neutral-300)">board</span></sc-if>
+      <sc-if value="{{ showNav }}" hint-placeholder-val="{{ true }}">
+        <nav aria-label="Autres profils" style="display:flex;gap:4px;font-size:12px">
+          <a href="#" aria-current="page" style="padding:4px 10px;border-radius:6px;color:var(--color-accent-300);box-shadow:inset 0 0 0 1px var(--color-accent-700)">board</a>
+          <a href="#" style="padding:4px 10px;border-radius:6px;color:var(--color-neutral-300)">hold</a>
+          <a href="#" style="padding:4px 10px;border-radius:6px;color:var(--color-neutral-300)">llm</a>
+        </nav>
+      </sc-if>
+      <span style="margin-left:auto;font-size:12px;padding:3px 10px;border-radius:6px;border:1px solid var(--color-neutral-700);color:var(--color-neutral-300)">Paper trading, argent fictif</span>
+      <span style="display:inline-flex;align-items:center;gap:7px;font-size:12px;color:var(--color-neutral-400)">
+        <span style="position:relative;width:7px;height:7px">
+          <sc-if value="{{ online }}" hint-placeholder-val="{{ true }}"><span style="position:absolute;inset:0;border-radius:50%;background:var(--color-accent)"></span><span data-anim="" style="position:absolute;inset:0;border-radius:50%;background:var(--color-accent);animation:ta-ping 15s cubic-bezier(.2,.6,.3,1) infinite"></span></sc-if>
+          <sc-if value="{{ offline }}"><span style="position:absolute;inset:0;border-radius:50%;border:1.5px solid var(--tone-orange)"></span></sc-if>
+        </span>{{ freshness }}</span>
+      <sc-if value="{{ isWeb }}" hint-placeholder-val="{{ true }}"><form method="post" action="/logout" style="margin:0"><button type="submit" class="btn btn-secondary" style="min-height:clamp(32px,calc(56px - 2cqi),44px)">Se déconnecter</button></form></sc-if>
+    </header>
+
+    <sc-if value="{{ isEmpty }}">
+      <div style="display:flex;flex-direction:column;gap:18px;padding:clamp(16px,2.4cqi,28px);max-width:760px">
+        <div style="display:flex;flex-direction:column;gap:14px;padding:clamp(18px,3cqi,32px);border-radius:14px;background:var(--color-surface);box-shadow:var(--shadow-sm)">
+          <span style="width:40px;height:40px;border-radius:50%;display:grid;place-items:center;background:var(--color-accent-900)"><span style="width:12px;height:12px;border-radius:50%;border:1.5px solid var(--color-accent)"></span></span>
+          <h3 style="margin:0;font-size:22px">Aucune donnée pour l'instant</h3>
+          <p style="margin:0;color:var(--color-neutral-300);text-wrap:pretty">Le bot de ce profil n'a encore jamais tourné. Dès son premier cycle, cette page se remplira toute seule : les sous-agents, le portefeuille et la référence à battre.</p>
+          <pre style="margin:0;padding:12px 14px;border-radius:8px;background:var(--color-neutral-900);font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:13px;overflow-x:auto;color:var(--color-neutral-200)">tradeagent run --profile board</pre>
+          <span style="font-size:12px;color:var(--color-neutral-500)">Lancer un bot reste en ligne de commande : cette page ne fait que lire.</span>
+        </div>
+        <div style="display:flex;flex-wrap:wrap;gap:12px">
+          <div style="flex:1 1 180px;height:92px;border-radius:14px;border:1px dashed var(--color-neutral-700);display:flex;align-items:flex-end;padding:12px;font-size:12px;color:var(--color-neutral-500)">Sous-agents</div>
+          <div style="flex:2 1 240px;height:92px;border-radius:14px;border:1px dashed var(--color-neutral-700);display:flex;align-items:flex-end;padding:12px;font-size:12px;color:var(--color-neutral-500)">Portefeuille unique</div>
+          <div style="flex:1 1 180px;height:92px;border-radius:14px;border:1px dashed var(--color-neutral-700);display:flex;align-items:flex-end;padding:12px;font-size:12px;color:var(--color-neutral-500)">Référence hold</div>
+        </div>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ hasData }}" hint-placeholder-val="{{ true }}">
+      <div style="display:flex;flex-direction:column;gap:clamp(18px,2.2cqi,28px);max-width:1680px;padding:0 clamp(16px,2.4cqi,28px) clamp(20px,2.4cqi,32px)">
+        <sc-if value="{{ hasBanner }}">
+          <div role="status" style="display:flex;gap:12px;align-items:flex-start;padding:14px 16px;border-radius:8px;background:var(--color-surface);box-shadow:var(--shadow-sm)">
+            <sc-if value="{{ bDead }}"><svg width="20" height="20" viewBox="0 0 16 16" fill="none" stroke="var(--tone-dead)" stroke-width="1.7" stroke-linecap="round" aria-hidden="true" style="flex:none;margin-top:1px"><circle cx="8" cy="8" r="6"></circle><path d="m5.5 5.5 5 5m0-5-5 5"></path></svg></sc-if>
+            <sc-if value="{{ bHalted }}"><svg width="20" height="20" viewBox="0 0 16 16" fill="var(--tone-orange)" aria-hidden="true" style="flex:none;margin-top:1px"><rect x="3.5" y="3" width="3" height="10" rx="0.8"></rect><rect x="9.5" y="3" width="3" height="10" rx="0.8"></rect></svg></sc-if>
+            <sc-if value="{{ bMute }}"><svg width="20" height="20" viewBox="0 0 16 16" fill="none" stroke="var(--tone-warn)" stroke-width="1.7" stroke-linecap="round" aria-hidden="true" style="flex:none;margin-top:1px"><circle cx="8" cy="8" r="6"></circle><path d="M8 4.8V8l2 1.4"></path></svg></sc-if>
+            <sc-if value="{{ bOffline }}"><svg width="20" height="20" viewBox="0 0 16 16" fill="none" stroke="var(--color-neutral-300)" stroke-width="1.7" stroke-linecap="round" aria-hidden="true" style="flex:none;margin-top:1px"><path d="M2 6.5a9 9 0 0 1 12 0M4.5 9a5.4 5.4 0 0 1 7 0M2.5 2.5l11 11"></path><circle cx="8" cy="12" r="0.8" fill="var(--color-neutral-300)"></circle></svg></sc-if>
+            <sc-if value="{{ bTier }}"><svg width="20" height="20" viewBox="0 0 16 16" fill="none" stroke="var(--tone-orange)" stroke-width="1.7" stroke-linejoin="round" aria-hidden="true" style="flex:none;margin-top:1px"><path d="M8 1.8 13.5 4v4.2c0 3-2.4 5-5.5 6-3.1-1-5.5-3-5.5-6V4z"></path></svg></sc-if>
+            <div style="display:flex;flex-direction:column;gap:2px;min-width:0">
+              <span style="font-size:15px;font-weight:500">{{ bannerTitle }}</span>
+              <span style="font-size:13px;color:var(--color-neutral-300);text-wrap:pretty">{{ bannerText }}</span>
+            </div>
+          </div>
+        </sc-if>
+
+        <div style="display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 14px;font-size:13px;color:var(--color-neutral-300);font-variant-numeric:tabular-nums">
+          <span>{{ cadenceLead }} <b style="font-weight:500;color:var(--color-text)">{{ cadenceValue }}</b></span>
+          <span style="color:var(--color-neutral-500)">{{ cadenceMeta }}</span>
+          <sc-if value="{{ deciding }}"><span data-anim="" style="color:var(--color-accent-300);animation:ta-blink 1s ease-in-out infinite">Le board délibère</span></sc-if>
+        </div>
+
+        <div data-dim="{{ dim }}">
+          <div style="display:flex;flex-wrap:wrap;gap:14px;align-items:center">
+            <div style="flex:1 1 250px;display:flex;flex-direction:column;gap:10px;min-width:0">
+              <h6 style="margin:0;color:var(--color-neutral-500)">Sous-agents · 1</h6>
+              <div style="display:flex;flex-direction:column;gap:12px;padding:16px;border-radius:14px;background:var(--color-surface);box-shadow:var(--shadow-sm)">
+                <div style="display:flex;align-items:center;gap:14px">
+                  <div style="position:relative;width:44px;height:44px;flex:none;border-radius:50%;background:var(--color-accent-900)">
+                    <sc-if value="{{ pClaim }}" hint-placeholder-val="{{ true }}"><span data-anim="" style="position:absolute;left:14px;top:14px;width:16px;height:16px;border-radius:50%;border:1.5px solid var(--color-accent);animation:ta-halo 3.2s cubic-bezier(.2,.6,.3,1) infinite"></span><span style="position:absolute;left:14px;top:14px;width:16px;height:16px;border-radius:50%;background:var(--color-accent)"></span></sc-if>
+                    <sc-if value="{{ pExit }}"><span style="position:absolute;left:10px;top:14px;width:16px;height:16px;border-radius:50%;background:var(--color-accent-300)"></span><svg data-anim="" width="14" height="14" viewBox="0 0 12 12" style="position:absolute;left:26px;top:15px;animation:ta-out .9s ease-in infinite" aria-hidden="true"><path d="M2 2l4 4-4 4" fill="none" stroke="var(--color-accent-300)" stroke-width="1.6" stroke-linecap="round"></path></svg></sc-if>
+                    <sc-if value="{{ pRest }}"><span style="position:absolute;left:14px;top:14px;width:16px;height:16px;border-radius:50%;border:1.5px solid var(--color-neutral-500)"></span></sc-if>
+                    <sc-if value="{{ pPause }}"><svg width="18" height="18" viewBox="0 0 16 16" fill="var(--color-neutral-400)" style="position:absolute;left:13px;top:13px" aria-hidden="true"><rect x="3.5" y="3" width="3" height="10" rx="0.8"></rect><rect x="9.5" y="3" width="3" height="10" rx="0.8"></rect></svg></sc-if>
+                    <sc-if value="{{ pUnknown }}"><span style="position:absolute;left:14px;top:14px;width:16px;height:16px;border-radius:50%;border:1.5px dashed var(--tone-warn)"></span></sc-if>
+                  </div>
+                  <div style="display:flex;flex-direction:column;min-width:0">
+                    <span style="font-size:16px;font-weight:500">Suivi de tendance</span>
+                    <span style="font-size:12px;color:var(--color-neutral-400)">{{ postureText }}</span>
+                  </div>
+                </div>
+                <sc-for list="{{ claims }}" as="c" hint-placeholder-count="2">
+                  <div style="display:flex;justify-content:space-between;gap:10px;font-size:13px;font-variant-numeric:tabular-nums"><span>{{ c.sym }}</span><span style="color:var(--color-neutral-300)">{{ c.value }}</span></div>
+                </sc-for>
+                <sc-if value="{{ noClaims }}"><span style="font-size:13px;color:var(--color-neutral-500)">Aucune position réclamée.</span></sc-if>
+              </div>
+            </div>
+            <sc-if value="{{ notPhone }}" hint-placeholder-val="{{ true }}">
+              <div aria-hidden="true" style="position:relative;flex:0 0 96px;height:40px">
+                <div style="position:absolute;left:0;right:0;top:19px;border-top:1px dashed var(--color-neutral-700)"></div>
+                <span style="position:absolute;left:0;right:0;top:-2px;text-align:center;font-size:11px;color:var(--color-neutral-500)">cibles</span>
+                <sc-if value="{{ orderFlight }}"><span data-anim="" style="position:absolute;left:100%;top:14px;width:11px;height:11px;margin-left:-5px;border-radius:50%;background:var(--color-accent);box-shadow:0 0 12px var(--color-accent);animation:ta-travel 1.6s cubic-bezier(.45,0,.2,1) both"></span></sc-if>
+              </div>
+            </sc-if>
+            <sc-if value="{{ isPhone }}">
+              <div aria-hidden="true" style="position:relative;flex:1 0 100%;height:36px">
+                <div style="position:absolute;top:0;bottom:0;left:38px;border-left:1px dashed var(--color-neutral-700)"></div>
+                <span style="position:absolute;left:50px;top:9px;font-size:11px;color:var(--color-neutral-500)">cibles</span>
+                <sc-if value="{{ orderFlight }}"><span data-anim="" style="position:absolute;left:33px;top:100%;width:11px;height:11px;margin-top:-5px;border-radius:50%;background:var(--color-accent);box-shadow:0 0 12px var(--color-accent);animation:ta-travel-y 1.4s cubic-bezier(.45,0,.2,1) both"></span></sc-if>
+              </div>
+            </sc-if>
+            <div style="flex:2 1 340px;display:flex;flex-direction:column;gap:12px;padding:clamp(16px,2cqi,24px);border-radius:14px;background:var(--color-surface);box-shadow:var(--shadow-md);min-width:0">
+              <div style="display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:6px 12px">
+                <h6 style="margin:0;color:var(--color-neutral-400)">Portefeuille unique</h6>
+                <span style="display:flex;align-items:center;gap:6px;font-size:13px">
+                  <sc-if value="{{ gAlive }}" hint-placeholder-val="{{ true }}"><svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="4.5" fill="var(--color-accent)"></circle></svg></sc-if>
+                  <sc-if value="{{ gPrudent }}"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="var(--tone-warn)" stroke-width="1.7" stroke-linejoin="round" aria-hidden="true"><path d="M8 2.5 14 13H2z"></path><path d="M8 6.5v3"></path></svg></sc-if>
+                  <sc-if value="{{ gDefensif }}"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="var(--tone-orange)" stroke-width="1.7" stroke-linejoin="round" aria-hidden="true"><path d="M8 1.8 13.5 4v4.2c0 3-2.4 5-5.5 6-3.1-1-5.5-3-5.5-6V4z"></path></svg></sc-if>
+                  <sc-if value="{{ gDead }}"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="var(--tone-dead)" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><circle cx="8" cy="8" r="6"></circle><path d="m5.5 5.5 5 5m0-5-5 5"></path></svg></sc-if>
+                  <sc-if value="{{ gHalted }}"><svg width="14" height="14" viewBox="0 0 16 16" fill="var(--tone-orange)" aria-hidden="true"><rect x="3.5" y="3" width="3" height="10" rx="0.8"></rect><rect x="9.5" y="3" width="3" height="10" rx="0.8"></rect></svg></sc-if>
+                  {{ statusLabel }}
+                </span>
+              </div>
+              <div style="position:relative;align-self:flex-start">
+                <span style="font-size:clamp(34px,3.8cqi,48px);font-weight:500;letter-spacing:-0.03em;line-height:1;font-variant-numeric:tabular-nums">{{ equity }}</span>
+                <sc-if value="{{ arriving }}"><span data-anim="" style="position:absolute;inset:-6px -10px;border-radius:8px;background:color-mix(in srgb,var(--color-accent) 18%,transparent);opacity:0;animation:ta-flash 2.2s ease-out both"></span></sc-if>
+              </div>
+              <div style="display:flex;flex-wrap:wrap;gap:4px 22px;font-size:13px;color:var(--color-neutral-300);font-variant-numeric:tabular-nums"><span>Résultat net <b data-sign="{{ netSign }}" style="font-weight:500;color:var(--color-text)">{{ net }}</b></span><span>Drawdown <b style="font-weight:500;color:var(--color-text)">{{ dd }}</b></span><span>{{ life }}</span></div>
+              <div style="display:flex;height:8px;gap:2px;border-radius:4px;overflow:hidden">
+                <sc-for list="{{ positions }}" as="p" hint-placeholder-count="3">
+                  <sc-if value="{{ p.a }}"><div style="width:{{ p.w }};background:var(--color-accent)"></div></sc-if>
+                  <sc-if value="{{ p.b }}"><div style="width:{{ p.w }};background:var(--color-accent-300)"></div></sc-if>
+                  <sc-if value="{{ p.c }}"><div style="width:{{ p.w }};background:var(--color-neutral-700)"></div></sc-if>
+                </sc-for>
+              </div>
+              <div style="display:flex;flex-direction:column;font-size:13px;font-variant-numeric:tabular-nums">
+                <sc-for list="{{ positions }}" as="p" hint-placeholder-count="3">
+                  <div style="display:grid;grid-template-columns:minmax(0,1.4fr) minmax(0,1fr) 44px;gap:10px;padding:6px 0;background:linear-gradient(to right,transparent,var(--color-divider) 48px,var(--color-divider) calc(100% - 48px),transparent) no-repeat top/100% 1px">
+                    <span style="display:flex;align-items:center;gap:8px;min-width:0">
+                      <sc-if value="{{ p.a }}"><span style="width:8px;height:8px;border-radius:2px;flex:none;background:var(--color-accent)"></span></sc-if>
+                      <sc-if value="{{ p.b }}"><span style="width:8px;height:8px;border-radius:2px;flex:none;background:var(--color-accent-300)"></span></sc-if>
+                      <sc-if value="{{ p.c }}"><span style="width:8px;height:8px;border-radius:2px;flex:none;background:var(--color-neutral-700)"></span></sc-if>
+                      {{ p.name }} <span style="color:var(--color-neutral-500);white-space:nowrap">{{ p.detail }}</span></span>
+                    <span style="text-align:right">{{ p.value }}</span><span style="text-align:right;color:var(--color-neutral-400)">{{ p.share }}</span>
+                  </div>
+                </sc-for>
+              </div>
+              <div style="display:flex;flex-wrap:wrap;align-items:center;gap:6px 14px;font-size:12px;color:var(--color-neutral-400)">
+                <span>Aujourd'hui <b data-sign="{{ daySign }}" style="font-weight:500;color:var(--color-text)">{{ dayPnl }}</b></span>
+                <span style="display:inline-flex;align-items:center;gap:6px">Achats
+                  <span style="display:inline-flex;gap:3px"><sc-for list="{{ buyPips }}" as="b" hint-placeholder-count="6"><sc-if value="{{ b.used }}"><span style="width:8px;height:8px;border-radius:2px;background:var(--color-accent)"></span></sc-if><sc-if value="{{ b.free }}"><span style="width:8px;height:8px;border-radius:2px;box-shadow:inset 0 0 0 1px var(--color-neutral-600)"></span></sc-if></sc-for></span>
+                  {{ buys }}</span>
+              </div>
+              <div style="min-height:20px">
+                <sc-if value="{{ orderFlight }}"><div data-anim="" style="font-size:13px;color:var(--color-accent-300);animation:ta-enter .5s .9s cubic-bezier(.2,.7,.3,1) both">Ordre reçu : {{ orderText }}</div></sc-if>
+                <sc-if value="{{ deadNote }}"><div style="font-size:13px;color:var(--tone-dead-ink)">Vérifie ci-dessus qu'il ne reste aucune position : la liquidation peut avoir échoué.</div></sc-if>
+              </div>
+            </div>
+            <a href="#" style="flex:1 1 220px;display:flex;flex-direction:column;gap:8px;padding:18px;border-radius:14px;border:1px dashed var(--color-neutral-700);color:var(--color-text);text-decoration:none;min-width:0">
+              <h6 style="margin:0;color:var(--color-neutral-500)">Référence · hold</h6>
+              <span style="font-size:13px;color:var(--color-neutral-400)">Ne fait rien. À battre.</span>
+              <span style="font-size:26px;font-weight:500;font-variant-numeric:tabular-nums;color:var(--color-neutral-300)">1 000,00 €</span>
+              <span style="font-size:13px;color:var(--color-neutral-300)">Écart du board <b data-sign="{{ netSign }}" style="font-weight:500;color:var(--color-text)">{{ vsHold }}</b> <span style="color:var(--color-neutral-500)">{{ vsWord }}</span></span>
+            </a>
+          </div>
+
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(420px,100%),1fr));gap:clamp(20px,2.4cqi,32px);margin-top:clamp(20px,2.4cqi,32px)">
+            <div style="display:flex;flex-direction:column;gap:24px;min-width:0">
+              <div style="display:flex;flex-direction:column;gap:14px">
+                <span style="font-size:15px;font-weight:500">Marges</span>
+                <div style="display:flex;flex-direction:column;gap:6px">
+                  <div style="display:flex;justify-content:space-between;gap:10px;font-size:13px"><span>Mort de l'agent</span><span style="font-variant-numeric:tabular-nums;color:var(--color-neutral-300)">{{ deathText }}</span></div>
+                  <div style="position:relative;height:22px;border-radius:6px;background:linear-gradient(to right,var(--color-neutral-900) 37.5%,color-mix(in srgb,var(--tone-warn) 14%,var(--color-neutral-900)) 37.5% 62.5%,color-mix(in srgb,var(--tone-orange) 18%,var(--color-neutral-900)) 62.5%)">
+                    <div data-anim="" style="position:absolute;left:0;top:0;bottom:0;width:{{ deathPos }};border-radius:6px 0 0 6px;background:color-mix(in srgb,var(--color-accent) 32%,transparent);border-right:2px solid var(--color-accent);transition:width .8s cubic-bezier(.2,.7,.3,1)"></div>
+                    <span style="position:absolute;left:37.5%;bottom:-17px;transform:translateX(-50%);font-size:10px;color:var(--color-neutral-500)">prudent 15 %</span>
+                    <span style="position:absolute;left:62.5%;bottom:-17px;transform:translateX(-50%);font-size:10px;color:var(--color-neutral-500)">défensif 25 %</span>
+                    <span style="position:absolute;right:0;bottom:-17px;font-size:10px;color:var(--color-neutral-500)">mort 40 %</span>
+                  </div>
+                </div>
+                <sc-for list="{{ claims }}" as="c" hint-placeholder-count="2">
+                  <div style="display:flex;flex-direction:column;gap:6px;margin-top:10px">
+                    <div style="display:flex;justify-content:space-between;gap:10px;font-size:13px"><span>Sortie {{ c.sym }} <span style="color:var(--color-neutral-500)">à {{ c.stop }}</span></span><span style="font-variant-numeric:tabular-nums;color:var(--color-neutral-300)">{{ c.margin }} · {{ c.word }}</span></div>
+                    <div style="position:relative;height:22px;border-radius:6px;background:var(--color-neutral-900)">
+                      <sc-if value="{{ c.calm }}" hint-placeholder-val="{{ true }}"><div data-anim="" style="position:absolute;right:0;top:0;bottom:0;width:{{ c.posInv }};border-radius:0 6px 6px 0;background:color-mix(in srgb,var(--color-accent-300) 18%,transparent);border-left:2px solid var(--color-accent-300);transition:width .8s cubic-bezier(.2,.7,.3,1)"></div></sc-if>
+                      <sc-if value="{{ c.tense }}"><div data-anim="" style="position:absolute;right:0;top:0;bottom:0;width:{{ c.posInv }};border-radius:0 6px 6px 0;background:color-mix(in srgb,var(--tone-warn) 22%,transparent);border-left:2px solid var(--tone-warn);animation:ta-tremble .4s linear infinite"></div></sc-if>
+                    </div>
+                  </div>
+                </sc-for>
+              </div>
+              <div style="display:flex;flex-direction:column;gap:10px">
+                <div style="display:flex;justify-content:space-between;align-items:baseline"><span style="font-size:15px;font-weight:500">Equity depuis la mise</span><span style="font-size:12px;color:var(--color-neutral-500)">{{ chartMeta }}</span></div>
+                <div role="img" aria-label="{{ chartAria }}" style="position:relative;height:170px">
+                  <svg viewBox="0 0 300 100" preserveAspectRatio="none" style="position:absolute;inset:0;width:100%;height:100%;overflow:visible" aria-hidden="true">
+                    <path d="{{ curvePath }}" fill="none" stroke="var(--color-accent)" stroke-width="2" vector-effect="non-scaling-stroke" stroke-linejoin="round"></path>
+                  </svg>
+                  <sc-for list="{{ chartLines }}" as="l" hint-placeholder-count="1"><div style="position:absolute;left:0;right:0;top:{{ l.yPct }};border-top:1px dashed var(--color-neutral-700)"><span style="position:absolute;right:0;top:-18px;font-size:11px;color:var(--color-neutral-500)">{{ l.label }}</span></div></sc-for>
+                  <div style="position:absolute;left:100%;top:{{ endTop }};width:10px;height:10px;margin:-5px 0 0 -5px;border-radius:50%;background:var(--color-accent);box-shadow:0 0 0 3px var(--color-bg)"></div>
+                </div>
+              </div>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:24px;min-width:0">
+              <div style="display:flex;flex-direction:column;gap:6px">
+                <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px"><span style="font-size:15px;font-weight:500">Ce qui a été décidé</span><span style="font-size:12px;color:var(--color-neutral-500)">{{ decisions }} décisions · attentes regroupées</span></div>
+                <sc-for list="{{ journal }}" as="j" hint-placeholder-count="4">
+                  <sc-if value="{{ j.isNew }}"><div data-anim="" style="height:2px;border-radius:2px;background:var(--color-accent);opacity:0;animation:ta-flash 2.6s ease-out both"></div></sc-if>
+                  <div style="display:flex;flex-direction:column;gap:5px;padding:12px 14px;border-radius:8px;background:var(--color-surface)">
+                    <div style="display:flex;flex-wrap:wrap;align-items:center;gap:4px 10px;font-size:12px;color:var(--color-neutral-400)">
+                      <span style="font-variant-numeric:tabular-nums">{{ j.time }}</span><span>{{ j.from }}</span>
+                      <span style="margin-left:auto;display:flex;gap:6px;align-items:center">
+                        <sc-if value="{{ j.isExec }}"><span class="tag tag-accent">Exécuté</span></sc-if>
+                        <sc-if value="{{ j.isReduced }}"><span class="tag tag-outline">Réduit</span></sc-if>
+                        <sc-if value="{{ j.isRefused }}"><span style="font-size:11px;padding:2px 9px;border-radius:6px;border:1px solid var(--tone-orange);color:var(--tone-orange-ink)">Refusé</span></sc-if>
+                        <sc-if value="{{ j.isHold }}"><span class="tag tag-neutral">Aucun ordre</span></sc-if>
+                      </span>
+                    </div>
+                    <div style="font-size:14px"><b style="font-weight:500">{{ j.glyph }} {{ j.title }}</b> <span style="color:var(--color-neutral-400)">{{ j.sub }}</span></div>
+                    <div style="font-size:13px;color:var(--color-neutral-300);text-wrap:pretty;overflow-wrap:anywhere">« {{ j.reason }} »<span style="color:var(--color-neutral-500)"> {{ j.vt }}</span></div>
+                  </div>
+                </sc-for>
+              </div>
+              <div style="display:flex;flex-direction:column;gap:10px">
+                <span style="font-size:15px;font-weight:500">Évènements</span>
+                <sc-for list="{{ events }}" as="e" hint-placeholder-count="2">
+                  <div style="display:flex;flex-direction:column;gap:3px;padding:8px 0;background:linear-gradient(to right,transparent,var(--color-divider) 48px,var(--color-divider) calc(100% - 48px),transparent) no-repeat top/100% 1px">
+                    <div style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--color-neutral-400)">
+                      <sc-if value="{{ e.info }}"><span class="tag tag-neutral">info</span></sc-if>
+                      <sc-if value="{{ e.warn }}"><span style="font-size:11px;padding:2px 9px;border-radius:6px;border:1px solid var(--tone-warn);color:var(--tone-warn-ink)">alerte</span></sc-if>
+                      <sc-if value="{{ e.crit }}"><span style="font-size:11px;padding:2px 9px;border-radius:6px;border:1px solid var(--tone-dead);color:var(--tone-dead-ink)">critique</span></sc-if>
+                      <span style="font-variant-numeric:tabular-nums">{{ e.time }}</span>
+                    </div>
+                    <span style="font-size:13px;overflow-wrap:anywhere">{{ e.msg }}</span>
+                  </div>
+                </sc-for>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </sc-if>
+
+    <footer style="display:flex;flex-direction:column;gap:2px;padding:0 clamp(16px,2.4cqi,28px) 24px;font-size:12px;color:var(--color-neutral-500)">
+      <span>Lecture seule · actualisation toutes les 15 s · heures dans ton fuseau.</span>
+      <span>Reprendre un bot arrêté ou repartir d'une nouvelle vie reste en ligne de commande.</span>
+    </footer>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1280,&quot;height&quot;:1200},&quot;etat&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;vie&quot;,&quot;mort&quot;,&quot;arrete&quot;,&quot;muet&quot;,&quot;horsligne&quot;,&quot;vide&quot;],&quot;default&quot;:&quot;vie&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;palier&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;normal&quot;,&quot;prudent&quot;,&quot;defensif&quot;],&quot;default&quot;:&quot;normal&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;contexte&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;web&quot;,&quot;electron&quot;],&quot;default&quot;:&quot;web&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;largeur&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;bureau&quot;,&quot;tablette&quot;,&quot;telephone&quot;],&quot;default&quot;:&quot;bureau&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;vivant&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:false,&quot;tsType&quot;:&quot;boolean&quot;},&quot;mouvementReduit&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:false,&quot;tsType&quot;:&quot;boolean&quot;}}">
+class Component extends DCLogic {
+  BASE = [1000,998,1003,1009,1006,1015,1022,1019,1028,1035,1031,1040,1044.8,1038,1030,1024,1019,1013,1016,1009,1004,1008,1015,1012.4];
+  SEQ = [
+    {a:'buy',sym:'BTC/EUR',amt:'40,00 €',v:'reduced',vt:'réduit à 25,30 € : plafond de position',r:'régime haussier confirmé sur BTC/EUR'},
+    {a:'hold',r:'cibles inchangées, rien à trader'},
+    {a:'sell',sym:'ETH/EUR',amt:'187,11 €',v:'exec',vt:'',r:'ETH/EUR sous son niveau de sortie (2 240 €)'},
+    {a:'hold',r:'cibles inchangées, rien à trader'},
+    {a:'buy',sym:'ETH/EUR',amt:'60,00 €',v:'refused',vt:'refusé : 6 achats sur 6 aujourd’hui',r:'régime haussier sur ETH/EUR'},
+    {a:'hold',r:'cibles inchangées, rien à trader'}
+  ];
+  DELTAS = [0.4,-0.6,-1.1,0.8,0.2,-0.3];
+  J0 = [
+    {a:'hold',time:'lun. 18:30',count:6,since:'17:15',r:'cibles inchangées, rien à trader'},
+    {a:'buy',time:'lun. 17:00',sym:'ETH/EUR',amt:'187,11 €',v:'exec',vt:'',r:'régime haussier sur ETH/EUR, sortie à 2 240 €'},
+    {a:'buy',time:'dim. 09:45',sym:'BTC/EUR',amt:'160,00 €',v:'reduced',vt:'réduit à 122,70 € : plafond d’ordre',r:'régime haussier sur BTC/EUR, sortie à 55 300 €'},
+    {a:'sell',time:'sam. 14:15',sym:'BTC/EUR',amt:'98,40 €',v:'exec',vt:'',r:'BTC/EUR sous son niveau de sortie'}
+  ];
+  state = { elapsed: 441, cycle: 1168, eqDelta: 0, arrivalUntil: 0, last: null, now: Date.now(), journal: null };
+  rootRef = React.createRef();
+  componentDidMount() {
+    if (this.props.vivant) this.iv = setInterval(() => this.tick(), 250);
+    if (this.rootRef.current && window.ResizeObserver) {
+      this.ro = new ResizeObserver((e) => { const w = Math.round(e[0].contentRect.width); if (w !== this.state.w) this.setState({ w }); });
+      this.ro.observe(this.rootRef.current);
+    }
+  }
+  componentWillUnmount() { clearInterval(this.iv); if (this.ro) this.ro.disconnect(); }
+  tm(n) { const m = (18*60 + 30 + 15*n) % 1440; return String(Math.floor(m/60)).padStart(2,'0') + ':' + String(m%60).padStart(2,'0'); }
+  tick() {
+    let elapsed = this.state.elapsed + 0.25 * 30;
+    if (elapsed >= 900) { elapsed -= 900; this.doCycle(); }
+    this.setState({ elapsed, now: Date.now() });
+  }
+  doCycle() {
+    const n = this.state.cycle - 1168 + 1, k = (n - 1) % this.SEQ.length, s = this.SEQ[k], time = 'lun. ' + this.tm(n);
+    let journal = (this.state.journal || this.J0).slice();
+    if (s.a === 'hold' && journal[0].a === 'hold') journal[0] = {...journal[0], time, count: journal[0].count + 1};
+    else journal.unshift(s.a === 'hold' ? {a:'hold',time,count:1,since:this.tm(n),r:s.r} : {...s, time});
+    this.setState({ cycle: this.state.cycle + 1, journal: journal.slice(0, 5), eqDelta: this.state.eqDelta + this.DELTAS[k], arrivalUntil: Date.now() + 3500, last: s });
+  }
+  renderVals() {
+    const f = (n, d = 2) => new Intl.NumberFormat('fr-FR', {minimumFractionDigits: d, maximumFractionDigits: d}).format(n);
+    const eur = (n, d = 2) => f(n, d) + '\u00a0€';
+    const sg = (n) => (n > 0.004 ? '+' : n < -0.004 ? '−' : '±');
+    const se = (n) => sg(n) + f(Math.abs(n)) + '\u00a0€';
+    const etat = this.props.etat ?? 'vie';
+    const tier = etat === 'vie' || etat === 'muet' || etat === 'horsligne' ? (this.props.palier ?? 'normal') : 'normal';
+    const st = this.state;
+    const W = st.w || ({bureau: 1280, tablette: 834, telephone: 390}[this.props.largeur ?? 'bureau']);
+    const width = W < 600 ? 'telephone' : W < 1024 ? 'tablette' : 'bureau';
+    const electron = (this.props.contexte ?? 'web') === 'electron';
+    const sgn = (n) => (n > 0.004 ? 'pos' : n < -0.004 ? 'neg' : 'zero');
+    const p = st.elapsed / 900, rem = Math.max(0, 900 - st.elapsed);
+    const live = etat === 'vie';
+    const forced = !!this.props.demoArrivee && live;
+    if (forced && !st.last) st.last = this.SEQ[0];
+    const arriving = live && (forced || st.now < st.arrivalUntil);
+    const dead = etat === 'mort', halted = etat === 'arrete', mute = etat === 'muet', off = etat === 'horsligne';
+    let eq = dead ? 624.1 : halted ? 1003.2 : ({normal: 1012.4, prudent: 878.2, defensif: 772.5}[tier]) + st.eqDelta;
+    const peak = 1044.8, net = eq - 1000, dd = Math.max(0, (1 - eq / peak) * 100);
+    let vals = this.BASE.slice();
+    if (tier !== 'normal' || dead) {
+      const j = [0,4,-3,5,-2,3,-4,2,-1,1,0];
+      vals = vals.slice(0, 13);
+      for (let i = 1; i <= 11; i++) vals.push(1044.8 + (eq - 1044.8) * (i / 11) + j[i - 1] * (i < 11 ? 1 : 0));
+    }
+    vals[vals.length - 1] = eq;
+    const mn = Math.min(...vals), mx = Math.max(...vals), pad = (mx - mn) * 0.14 + 4, lo = mn - pad, hi = mx + pad;
+    const y = (v) => (hi - v) / (hi - lo) * 100, x = (i) => i / (vals.length - 1) * 300;
+    const curvePath = 'M' + vals.map((v, i) => x(i).toFixed(1) + ',' + y(v).toFixed(2)).join(' L');
+    const chartLines = [[1000,'mise 1 000 €'],[888.08,'prudent sous 888,08 €'],[783.6,'défensif sous 783,60 €'],[626.88,'mort sous 626,88 €']]
+      .filter(([v]) => v > lo && v < hi).map(([v, label]) => ({ yPct: y(v).toFixed(2) + '%', label }));
+    const margins = {normal: [5.6, 3.1], prudent: [2.4, 1.1], defensif: [0.8, 0.4]}[tier];
+    const baseC = [{sym:'BTC/EUR',stop:'55 300 €',value:'122,68 €'},{sym:'ETH/EUR',stop:'2 240,00 €',value:'187,11 €'}];
+    const claims = dead ? [] : baseC.map((c, i) => { const m = halted ? [4.2, 1.9][i] : margins[i]; const pos = (1 - Math.min(m / 8, 1)) * 94;
+      return {...c, margin: '+' + f(m, 1) + ' %', posInv: (100 - pos).toFixed(1) + '%', word: m < 1.5 ? 'tendu' : m < 4 ? 'attentif' : 'large', tense: m < 1.5 && live, calm: !(m < 1.5 && live)}; });
+    const positions = dead ? [{a:false,b:false,c:true,name:'Cash',detail:'',value:eur(eq),share:'100 %',w:'100%'}] : [
+      {a:true,b:false,c:false,name:'BTC/EUR',detail:'0,0021',value:'122,68 €',share:'12 %',w:'12.1%'},
+      {a:false,b:true,c:false,name:'ETH/EUR',detail:'0,081',value:'187,11 €',share:'18 %',w:'18.5%'},
+      {a:false,b:false,c:true,name:'Cash',detail:'',value:eur(eq - 309.79),share:f((eq - 309.79) / eq * 100, 0) + ' %',w:'69.4%'}];
+    let posture = 'claim';
+    if (dead) posture = 'rest'; else if (halted) posture = 'pause'; else if (mute) posture = 'unknown'; else if (arriving && st.last && st.last.a === 'sell') posture = 'exit';
+    const postureText = {claim: 'Réclame 2 positions', exit: 'Sort de ' + (st.last ? st.last.sym : ''), rest: 'Au repos : l’agent est mort', pause: 'En suspens, cibles gelées', unknown: 'Pas de nouvelles depuis 47 min'}[posture];
+    const vw = {exec:'', reduced:'', refused:''};
+    let J = st.journal || this.J0;
+    if (dead) J = [
+      {a:'sell',time:'ven. 14:15',sym:'ETH/EUR',amt:'151,20 €',v:'exec',vt:'',r:'liquidation demandée par le kill switch',from:'kill switch → portefeuille'},
+      {a:'sell',time:'ven. 14:15',sym:'BTC/EUR',amt:'98,70 €',v:'exec',vt:'',r:'liquidation demandée par le kill switch',from:'kill switch → portefeuille'},
+      {a:'buy',time:'ven. 08:00',sym:'BTC/EUR',amt:'40,00 €',v:'refused',vt:'refusé : palier défensif, achats bloqués',r:'régime haussier sur BTC/EUR'},
+      {a:'hold',time:'ven. 07:45',count:22,since:'jeu. 02:15',r:'cibles inchangées, rien à trader'}];
+    const journal = J.map((j, i) => {
+      const hold = j.a === 'hold', title = hold ? 'Attente' : j.a === 'buy' ? 'Achat' : 'Vente';
+      return { time: j.time, title, from: j.from || 'trend → portefeuille', sub: hold ? (j.count > 1 ? j.count + ' fois depuis ' + j.since : '1 cycle') : j.sym + ' · ' + j.amt,
+        glyph: hold ? '·' : j.a === 'sell' ? '−' : '+',
+        isHold: hold, isExec: j.v === 'exec', isReduced: j.v === 'reduced', isRefused: j.v === 'refused', vt: j.vt || '', reason: j.r, isNew: i === 0 && arriving };
+    }).slice(0, width === 'telephone' ? 3 : 4);
+    const events = dead ? [
+      {crit:true,time:'ven. 14:15',msg:'Kill switch : drawdown de 40,3 %, seuil de 40 % atteint. Liquidation demandée.'},
+      {warn:true,time:'jeu. 02:15',msg:'Passage au palier défensif (drawdown 25,4 %)'}]
+      : halted ? [
+      {crit:true,time:'lun. 16:45',msg:'5 erreurs d’affilée : bot arrêté sans liquidation'},
+      {warn:true,time:'lun. 16:45 · ×5 depuis 15:45',msg:'Flux de prix indisponible : délai dépassé'}]
+      : [{info:true,time:'lun. 17:00',msg:'Ordre exécuté : achat ETH/EUR 187,11 €'},{warn:true,time:'sam. 03:15 · ×3 depuis 02:45',msg:'Flux de prix indisponible, cycle ignoré'}];
+    const mm = String(Math.floor(rem / 60)).padStart(2, '0') + ':' + String(Math.floor(rem % 60)).padStart(2, '0');
+    const cad = dead ? ['Plus aucun cycle depuis', 'ven. 14:15', 'vie de 9 j 2 h'] : halted ? ['Cycles suspendus depuis', 'lun. 16:45', 'reprise manuelle seulement'] : mute ? ['Cycle attendu à 18:00, en retard de', '32 min', 'dernier cycle à 17:53'] : off ? ['Dernier état connu :', 'prochain conseil vers 18:45', 'compte à rebours suspendu'] : ['Prochain conseil dans', mm, 'cycle n° ' + new Intl.NumberFormat('fr-FR').format(st.cycle) + ' · toutes les 15 min'];
+    const tierLabel = {normal: 'normal', prudent: 'prudent', defensif: 'défensif'}[tier];
+    const banner = dead ? ['L’agent est mort', 'Le kill switch s’est déclenché vendredi à 14:15 : drawdown de 40,3 %, au-delà du seuil de 40 %. Plus aucun appel ; il ne repartira qu’avec une nouvelle vie (tradeagent reset).']
+      : halted ? ['Bot arrêté, sans liquidation', 'Cinq erreurs d’affilée (flux de prix indisponible). Les positions sont conservées. Cherche la cause, puis tradeagent resume.']
+      : mute ? ['Le bot ne donne plus de nouvelles', 'Aucun cycle depuis 47 min alors qu’un cycle a lieu toutes les 15 min. Le processus tourne-t-il ? Les chiffres ci-dessous datent de 17:53.']
+      : off ? ['Connexion au serveur perdue', 'Dernières données reçues il y a 2 min 10 s. Nouvel essai toutes les 15 s ; ce qui suit est figé à 18:32.']
+      : tier === 'defensif' ? ['Palier défensif : achats bloqués', 'Drawdown de ' + f(dd, 1) + ' % depuis le plus haut. Le board ne peut plus que vendre jusqu’à ce que l’equity remonte.'] : null;
+    return {
+      theme: this.props.theme ?? 'dark',
+      rm: (this.props.mouvementReduit || !live) ? '1' : '0',
+      rootRef: this.rootRef, mode: W >= 1500 ? 'large' : width,
+      isPhone: width === 'telephone', notPhone: width !== 'telephone',
+      isWeb: !electron, isElectron: electron, showNav: !electron && width !== 'telephone',
+      netSign: sgn(net), daySign: dead ? 'neg' : 'neg',
+      isEmpty: etat === 'vide', hasData: etat !== 'vide',
+      moodPrudent: tier === 'prudent', moodDefensif: tier === 'defensif', moodDead: dead, moodHalted: halted,
+      barLive: live, barLate: mute, barFrozen: off,
+      online: !off, offline: off, freshness: off ? 'Connexion perdue · il y a 2 min 10 s' : 'Actualisé il y a 6 s',
+      hasBanner: !!banner, bannerTitle: banner ? banner[0] : '', bannerText: banner ? banner[1] : '',
+      bDead: dead, bHalted: halted, bMute: mute, bOffline: off, bTier: !!banner && live && tier === 'defensif',
+      cadenceLead: cad[0], cadenceValue: cad[1], cadenceMeta: cad[2], deciding: live && p > 0.965,
+      dim: off ? 'off' : dead ? 'dead' : 'no',
+      pClaim: posture === 'claim', pExit: posture === 'exit', pRest: posture === 'rest', pPause: posture === 'pause', pUnknown: posture === 'unknown', postureText,
+      claims, noClaims: claims.length === 0,
+      orderFlight: arriving && !!st.last && st.last.a !== 'hold',
+      orderText: st.last && st.last.a !== 'hold' ? (st.last.a === 'buy' ? 'achat ' : 'vente ') + st.last.sym + ' · ' + st.last.amt + (st.last.vt ? ', ' + st.last.vt : '') : '',
+      gAlive: !dead && !halted && tier === 'normal', gPrudent: !dead && !halted && tier === 'prudent', gDefensif: !dead && !halted && tier === 'defensif', gDead: dead, gHalted: halted,
+      statusLabel: dead ? 'Mort' : halted ? 'Arrêté' : 'En vie · palier ' + tierLabel,
+      equity: eur(eq), arriving, net: se(net), dd: f(dd, 1) + ' %', life: dead ? 'vie de 9 j 2 h' : '12 j 4 h de vie',
+      positions, dayPnl: dead ? '−62,30 € (−9,08 %)' : '−4,10 € (−0,40 %)', buys: dead ? '0 sur 6' : '1 sur 6',
+      buyPips: Array.from({length: 6}, (_, i) => ({used: !dead && i < 1, free: dead || i >= 1})),
+      deadNote: dead, vsHold: se(net), vsWord: net >= 0 ? 'devant' : 'derrière',
+      deathPos: Math.min(100, dd / 40 * 100).toFixed(1) + '%', deathText: dead ? 'seuil atteint : 40,3 % sur 40 %' : f(dd, 1) + ' % sur 40 % · encore ' + f(40 - dd, 1) + ' pts',
+      curvePath, chartLines, endTop: y(eq).toFixed(2) + '%', chartMeta: dead ? '9 j · nette du loyer' : '12 j · nette du loyer',
+      chartAria: 'Courbe d’equity de 1 000,00 € à ' + eur(eq) + '. Prudent sous 888,08 €, défensif sous 783,60 €, mort sous 626,88 €.',
+      decisions: new Intl.NumberFormat('fr-FR').format(dead ? 868 : st.cycle), journal, events
+    };
+  }
+}
+</script>
+</body>
+</html>

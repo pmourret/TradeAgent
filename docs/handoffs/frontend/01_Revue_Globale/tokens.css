@@ -1,0 +1,96 @@
+/* tradeagent · direction « Le conseil » · jetons et animations, à fusionner dans static/app.css.
+   Aucune ressource externe : Inter est servie par le site (static/fonts/), repli system-ui. */
+
+@font-face { font-family: "Inter"; font-weight: 400; font-style: normal; font-display: swap; src: url("fonts/Inter-Regular.woff2") format("woff2"); }
+@font-face { font-family: "Inter"; font-weight: 500; font-style: normal; font-display: swap; src: url("fonts/Inter-Medium.woff2") format("woff2"); }
+@font-face { font-family: "Inter"; font-weight: 600; font-style: normal; font-display: swap; src: url("fonts/Inter-SemiBold.woff2") format("woff2"); }
+
+:root {
+  color-scheme: dark;
+  /* Nocturne */
+  --color-bg: #161826;
+  --color-surface: #232532;
+  --color-text: #e9e9ed;
+  --color-accent: #9184d9;
+  --color-divider: color-mix(in srgb, #e9e9ed 16%, transparent);
+  --color-neutral-100: #f3f5fe; --color-neutral-200: #e4e7f5; --color-neutral-300: #cfd3e5;
+  --color-neutral-400: #b2b6ca; --color-neutral-500: #9397ab; --color-neutral-600: #75798c;
+  --color-neutral-700: #595d6c; --color-neutral-800: #3f424d; --color-neutral-900: #292b31;
+  --color-accent-100: #f5f4ff; --color-accent-200: #e7e5fe; --color-accent-300: #d2cefd;
+  --color-accent-400: #b5abfc; --color-accent-500: #968ae0; --color-accent-600: #796cbf;
+  --color-accent-700: #5d5294; --color-accent-800: #423a6a; --color-accent-900: #2b2741;
+  --shadow-sm: 0 0 0 1px #3f424d;
+  --shadow-md: 0 0 0 1px #595d6c, 0 6px 18px rgba(0,0,0,0.55);
+  --radius-sm: 4px; --radius-tag: 6px; --radius-md: 8px; --radius-lg: 14px;
+  --font-body: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+
+  /* tons d'état (jamais seuls : toujours glyphe + mot) */
+  --tone-warn: oklch(0.82 0.11 85);      /* prudent, bot muet, marge tendue */
+  --tone-orange: oklch(0.74 0.13 52);    /* défensif, arrêté, refusé */
+  --tone-dead: oklch(0.70 0.14 22);      /* mort, critique */
+  --tone-warn-ink: oklch(0.86 0.09 85);
+  --tone-orange-ink: oklch(0.82 0.10 52);
+  --tone-dead-ink: oklch(0.80 0.10 22);
+  /* résultats (toujours avec le signe écrit + − ±) */
+  --tone-gain: oklch(0.80 0.14 155);
+  --tone-loss: oklch(0.72 0.16 25);
+
+  /* pilotées par app.js via element.style.setProperty */
+  --cycle: 0;          /* 0 → 1 entre deux cycles */
+  --death: 0;          /* drawdown_pct / max_drawdown_pct, borné à 1 */
+}
+
+:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
+
+/* résultat coloré */
+.sign-pos { color: var(--tone-gain); }
+.sign-neg { color: var(--tone-loss); }
+
+/* ambiance de palier : la page porte une seule de ces classes */
+.page { position: relative; }
+.page::before { content: ""; position: absolute; inset: 0; pointer-events: none; opacity: 0; transition: opacity 1.2s ease-in-out; }
+.page.mood-prudent::before  { opacity: 1; background: linear-gradient(to bottom, color-mix(in srgb, var(--tone-warn) 9%, transparent), transparent 460px); }
+.page.mood-defensif::before { opacity: 1; background: linear-gradient(to bottom, color-mix(in srgb, var(--tone-orange) 13%, transparent), transparent 560px); }
+.page.mood-dead::before     { opacity: 1; background: linear-gradient(to bottom, color-mix(in srgb, var(--tone-dead) 10%, transparent), transparent 380px); }
+.page.mood-halted::before   { opacity: 1; background: repeating-linear-gradient(135deg, color-mix(in srgb, var(--tone-orange) 5%, transparent) 0 14px, transparent 14px 28px); }
+.page.is-frozen .stage, .page.is-frozen .body { opacity: .62; filter: saturate(.4); transition: opacity .6s, filter .6s; }
+.page.mood-dead .stage, .page.mood-dead .body { filter: saturate(.6); }
+.page.is-frozen *, .page.mood-dead *, .page.mood-halted * { animation-play-state: paused; }
+
+/* barre de cycle */
+.cyclebar { height: 3px; background: var(--color-neutral-900); }
+.cyclebar > i { display: block; height: 3px; width: calc(var(--cycle) * 100%); background: var(--color-accent); transition: width 1s linear; }
+.cyclebar.is-late > i { width: 100%; background: repeating-linear-gradient(90deg, var(--tone-warn) 0 10px, transparent 10px 16px); }
+.cyclebar.is-frozen > i { background: var(--color-neutral-600); transition: none; }
+
+@keyframes ta-flash  { 0% { opacity: .95 } 100% { opacity: 0 } }
+@keyframes ta-enter  { 0% { opacity: 0; transform: translateY(-8px) } 100% { opacity: 1; transform: none } }
+@keyframes ta-halo   { 0% { transform: scale(1); opacity: .7 } 100% { transform: scale(2.4); opacity: 0 } }
+@keyframes ta-travel { 0% { left: 0%; opacity: 0 } 12% { opacity: 1 } 88% { opacity: 1 } 100% { left: 100%; opacity: 0 } }
+@keyframes ta-travel-y { 0% { top: 0%; opacity: 0 } 12% { opacity: 1 } 88% { opacity: 1 } 100% { top: 100%; opacity: 0 } }
+@keyframes ta-out    { 0% { transform: translateX(0); opacity: 1 } 100% { transform: translateX(6px); opacity: .2 } }
+@keyframes ta-blink  { 0%, 100% { opacity: 1 } 50% { opacity: .35 } }
+@keyframes ta-ping   { 0% { transform: scale(1); opacity: .8 } 70%, 100% { transform: scale(2.6); opacity: 0 } }
+@keyframes ta-tremble { 0%, 100% { transform: translateY(0) } 50% { transform: translateY(-1px) } }
+
+.presence .halo     { animation: ta-halo 3.2s cubic-bezier(.2,.6,.3,1) infinite; }
+.presence .chevron  { animation: ta-out .9s ease-in 4; }
+.deliberating       { animation: ta-blink 1s ease-in-out infinite; }
+.order-dot          { animation: ta-travel 1.6s cubic-bezier(.45,0,.2,1) both; }
+.is-compact .order-dot { animation-name: ta-travel-y; animation-duration: 1.4s; }
+.order-received     { animation: ta-enter .5s .9s cubic-bezier(.2,.7,.3,1) both; }
+.value-changed::after { content: ""; position: absolute; inset: -6px -10px; border-radius: 8px; background: color-mix(in srgb, var(--color-accent) 18%, transparent); animation: ta-flash 2.2s ease-out both; }
+.entry-new::before  { content: ""; display: block; height: 2px; border-radius: 2px; background: var(--color-accent); animation: ta-flash 2.6s ease-out both; }
+.margin-fill        { transition: width .8s cubic-bezier(.2,.7,.3,1); }
+.margin-fill.is-tense { animation: ta-tremble .4s linear infinite; }
+.fresh-dot.pinged::after { content: ""; position: absolute; inset: 0; border-radius: 50%; background: var(--color-accent); animation: ta-ping 1.6s cubic-bezier(.2,.6,.3,1) 1; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+  .presence .halo { transform: scale(1.6); opacity: .35; }
+  .value-changed::after { opacity: 1; }          /* halo fixe, retiré au snapshot suivant */
+  .entry-new .new-label { display: inline; }      /* mention « nouveau » */
+  .order-dot { display: none; }
+}
+.entry-new .new-label { display: none; }

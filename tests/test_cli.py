@@ -139,6 +139,32 @@ def test_the_lock_is_released_when_run_ends(project, capsys):
 
 # -- status --all -----------------------------------------------------------------------------------------------------
 
+def test_health_says_whether_the_bot_really_cycles(project, capsys, monkeypatch):
+    code, out, _ = run(["health", "--profile", "demo"], capsys)
+    assert code == 1 and "aucune base" in out                          # rien n'a tourné
+    assert not (project / "data").exists()                             # et le contrôle n'a rien créé
+    run(offline("demo"), capsys)
+    code, out, _ = run(["health", "--profile", "demo"], capsys)
+    assert code == 0 and "en bonne santé" in out and "alive" in out
+    code, out, _ = run(["health", "--profile", "hold"], capsys)        # un autre profil, jamais lancé
+    assert code == 1
+    now = cli.time.time()
+    monkeypatch.setattr(cli.time, "time", lambda: now + 7.0)           # demo : un cycle toutes les 2 s, limite 6 s
+    code, out, _ = run(["health", "--profile", "demo"], capsys)
+    assert code == 1 and "dernier cycle il y a" in out and "limite 6 s" in out
+    code, _, _ = run(["health", "--profile", "demo", "--max-age", "60"], capsys)
+    assert code == 0
+    monkeypatch.setattr(cli.time, "time", lambda: now + 5.0)           # juste sous la limite
+    assert run(["health", "--profile", "demo"], capsys)[0] == 0
+    assert run(["health", "--profile", "demo", "--max-age", "0"], capsys)[0] == 2
+
+
+def test_health_reports_a_base_without_any_cycle(project, capsys):
+    Storage(str(project / "data" / "paper-demo.db")).set("killswitch", {"status": "halted"})
+    code, out, _ = run(["health", "--profile", "demo"], capsys)
+    assert code == 1 and "aucun cycle enregistré" in out and "halted" in out
+
+
 def test_status_all_with_nothing_says_so(project, capsys):
     code, out, _ = run(["status", "--all"], capsys)
     assert code == 0 and "aucun profil n'a encore tourné" in out

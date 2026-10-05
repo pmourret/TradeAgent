@@ -59,6 +59,10 @@ def _parser() -> argparse.ArgumentParser:
 
     status = sub.add_parser("status", parents=[common], help="affiche l'état (lecture seule)")
     status.add_argument("--all", action="store_true", help="tous les profils qui ont déjà tourné, à la suite")
+    health = sub.add_parser("health", parents=[common],
+                            help="contrôle de santé (lecture seule) : code 0 si le bot a fait un cycle récemment, 1 sinon")
+    health.add_argument("--max-age", type=float, default=None, metavar="SECONDES",
+                        help="âge maximal du dernier cycle (défaut : trois intervalles de cycle)")
     up = sub.add_parser("up", parents=[with_config],
                         help="lance bot(s) + interface(s) web ensemble dans ce terminal ; Ctrl+C arrête tout")
     up.add_argument("profiles", nargs="*", metavar="profil",
@@ -238,6 +242,30 @@ def cmd_resume(args: argparse.Namespace) -> int:
         print(f"refusé : {exc}", file=sys.stderr)
         return 1
     print("bot relancé (si le bot était déjà actif, rien n'a changé).")
+    return 0
+
+
+def cmd_health(args: argparse.Namespace) -> int:
+    """Pour le contrôle de santé d'un conteneur ou d'une sonde : dit si le bot tourne vraiment, pas seulement si son
+    processus existe. Un bot mort ou arrêté (`halted`) ne fait plus de cycle : il est donc signalé lui aussi."""
+    cfg, _ = _load(args)
+    limit = args.max_age if args.max_age is not None else 3 * cfg.cycle_seconds
+    if limit <= 0:
+        raise ConfigError("--max-age doit être supérieur à 0")
+    if not Path(cfg.database).exists():
+        print(f"pas en bonne santé : aucune base à {cfg.database}, aucun cycle n'a encore tourné.")
+        return 1
+    storage = Storage(cfg.database)
+    last = storage.last_equity()
+    state = (storage.get("killswitch") or {}).get("status", "alive")
+    if last is None:
+        print(f"pas en bonne santé : aucun cycle enregistré (état : {state}).")
+        return 1
+    age = time.time() - float(last["ts"])
+    if age > limit:
+        print(f"pas en bonne santé : dernier cycle il y a {age:.0f} s, limite {limit:.0f} s (état : {state}).")
+        return 1
+    print(f"en bonne santé : dernier cycle il y a {age:.0f} s (état : {state}).")
     return 0
 
 
@@ -428,7 +456,7 @@ def main(argv: list[str] | None = None) -> int:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s", datefmt="%H:%M:%S")
     load_env_file(".env")
     args = _parser().parse_args(argv)
-    handlers = {"run": cmd_run, "up": cmd_up, "status": cmd_status, "resume": cmd_resume, "reset": cmd_reset, "web": cmd_web,
+    handlers = {"run": cmd_run, "up": cmd_up, "status": cmd_status, "resume": cmd_resume, "reset": cmd_reset, "web": cmd_web, "health": cmd_health,
                 "backtest": cmd_backtest}
     try:
         return handlers[args.command](args)

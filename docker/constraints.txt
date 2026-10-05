@@ -1,0 +1,43 @@
+# Versions exactes des dépendances de l'image, relevées dans le venv de développement le 2026-10-05.
+# À régénérer quand une dépendance change (même contenu que desktop/payload/constraints.txt, fabriqué par
+# desktop/build-payload.js). pip ne les installe pas toutes : il s'en sert pour figer celles dont il a besoin.
+aiohappyeyeballs==2.7.1
+aiohttp==3.14.3
+aiohttp-fast-zlib==0.3.0
+aiosignal==1.4.0
+annotated-types==0.8.0
+anthropic==1.11.0
+anyio==4.15.1
+attrs==26.1.0
+ccxt==4.5.85
+certifi==2026.6.17
+cffi==2.0.0
+charset-normalizer==3.4.7
+coincurve==21.0.0
+colorama==0.4.6
+cryptography==50.0.2
+docstring_parser==0.18.0
+frozenlist==1.8.0
+h11==0.16.0
+httpcore2==2.13.1
+httpx2==2.13.1
+idna==3.18
+jiter==0.17.0
+multidict==6.7.1
+orjson==3.11.9
+packaging==26.3
+propcache==0.5.2
+pycparser==3.0
+pydantic==2.13.5
+pydantic_core==2.46.5
+Pygments==2.21.0
+PyYAML==6.0.3
+requests==2.34.2
+sniffio==1.3.1
+truststore==0.10.4
+typing-inspection==0.4.4
+typing_extensions==4.16.0
+urllib3==2.8.0
+winloop==0.6.3
+yarl==1.25.1
+zlib-ng==1.0.0

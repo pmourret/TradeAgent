@@ -1,0 +1,62 @@
+# Le backend sur le serveur : un conteneur par bot, relancé tout seul (plantage, redémarrage du serveur).
+# Argent fictif, prix publics, aucune clé : ces services n'ont besoin d'aucun secret.
+#
+#   docker compose build
+#   docker compose up -d                 # démarre les bots
+#   docker compose ps                    # « healthy » = un cycle récent, pas seulement un processus en vie
+#   docker compose logs -f board
+#   docker compose stop board            # arrêt comme Ctrl+C : verrou rendu, état gardé en base
+#   docker compose run --rm board status --all
+#   docker compose run --rm board reset --profile board --yes     # refusé tant que le bot tourne
+#
+# Les données (bases, verrous, cache d'historique) vivent sur le serveur, pas dans les conteneurs :
+#   sudo mkdir -p /var/lib/docker/hiatus/tradeagent/data
+#   sudo chown 1000:1000 /var/lib/docker/hiatus/tradeagent/data
+#
+# L'interface web n'est pas encore servie ici : elle attend le mode « derrière un proxy » et l'identification
+# (invariant 10, à réécrire avec Pierre). Les bots, eux, ne sont joignables par personne : ils n'ouvrent aucun port.
+
+x-bot: &bot
+    build: .
+    image: tradeagent:latest
+    restart: unless-stopped
+    init: true                  # un vrai PID 1, qui transmet les signaux au bot
+    stop_signal: SIGINT         # l'équivalent de Ctrl+C, que `tradeagent run` sait recevoir (pas SIGTERM)
+    stop_grace_period: 2m
+    volumes:
+        - /var/lib/docker/hiatus/tradeagent/data:/app/data
+    networks:
+        - backend
+    logging:
+        driver: json-file
+        options:
+            max-size: "10m"
+            max-file: "5"
+
+services:
+
+    hold:
+        <<: *bot
+        container_name: tradeagent-hold
+        command: ["run", "--profile", "hold"]
+        healthcheck:
+            test: ["CMD", "tradeagent", "health", "--profile", "hold"]
+            interval: 5m
+            timeout: 30s
+            retries: 2
+            start_period: 2m
+
+    board:
+        <<: *bot
+        container_name: tradeagent-board
+        command: ["run", "--profile", "board"]
+        healthcheck:
+            test: ["CMD", "tradeagent", "health", "--profile", "board"]
+            interval: 5m
+            timeout: 30s
+            retries: 2
+            start_period: 2m
+
+networks:
+    backend:
+        external: true

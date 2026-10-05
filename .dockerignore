@@ -1,0 +1,14 @@
+# Tout ce qui n'entre pas dans l'image. Surtout : aucun secret, aucune base, aucun cache.
+.git
+.venv
+.env
+.env.*
+data
+desktop
+docs
+tests
+scripts
+.claude
+**/__pycache__
+*.egg-info
+build

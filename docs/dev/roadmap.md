@@ -52,6 +52,15 @@ La ligne `llm` vient d'un lancement fait quelques heures plus tôt : la fenêtre
 
 > **Code retiré le 2026-10-05** (décision de Pierre) : `supervisor.py`, `context.py`, les agents de backtest `dca` et `momentum`. Tout ce qui, dans ce fichier, décrit le superviseur, ses flux ou ces deux agents est de l'histoire : le code est dans git (dernier commit qui le contient : `6f52c3d`).
 
+### Priorité fixée par Pierre le 2026-10-05 : le backend sur un serveur, 24 h sur 24
+
+Serveur Ubuntu de Pierre, Docker et Traefik en place (réseau `proxy`, résolveur de certificats `duckdns`, domaines en `*.sternum-lab.duckdns.org`, données sous `/var/lib/docker/hiatus/<application>/`). On laisse tourner un jour, puis deux, puis une semaine, et on corrige ce qui casse ; le backtest sert au développement, le bot du serveur donne les actions réelles (en paper). Pas de sur-ingénierie.
+
+- **Fait le 2026-10-05, jamais construit ni lancé** : `Dockerfile`, `compose.yaml` (un conteneur par bot, `hold` et `board`, relance automatique, arrêt par SIGINT, aucun port ouvert), `docker/constraints.txt`, commande `tradeagent health` pour le contrôle de santé. Docker ne tournait pas sur le PC de développement : première construction à faire sur le serveur.
+- **À concevoir avec Pierre avant tout code** : l'interface web derrière Traefik, en HTTPS, avec une identification écrite pour l'application (décision de Pierre). Cela réécrit l'invariant 10 (aujourd'hui : boucle locale uniquement, GET/HEAD seulement) : il faut un mode « derrière un proxy » et une route de connexion.
+- **Ensuite** : la visualisation depuis un autre poste (le navigateur d'abord), puis les interactions à distance (phase suivante, décidée par Pierre).
+- **Après la première semaine** : la nouvelle règle de mort, le deuxième siège (force relative BTC/ETH), la piste des frais.
+
 ### Décisions du 2026-10-05 (session de réflexion, aucun code écrit)
 
 Idées de Pierre : un « board » de trading en pyramide (un superviseur au sommet, des sous-agents quant en dessous), la rentabilité d'abord, puis le clonage avec des facteurs auto-générés. Décidé avec lui (détail dans `decisions.md`) :

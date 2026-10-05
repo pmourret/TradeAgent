@@ -156,6 +156,24 @@ Limites : les versions ne sont pas vérifiées par empreinte (hachage) ; le fich
 
 Les protections de l'interface web restent en place, et la fenêtre en ajoute : chaque page tourne en bac à sable, sans accès à Node ni au processus principal ; elle ne peut ni naviguer ni charger quoi que ce soit hors de son serveur local, ni ouvrir de fenêtre, ni obtenir de permission ; un port n'est affiché que si c'est bien tradeagent qui y répond.
 
+## Sur un serveur (Docker)
+
+Pour que les bots tournent 24 h sur 24 sans dépendre d'un PC allumé : une image (`Dockerfile`), un conteneur par bot (`compose.yaml`), relancé tout seul après un plantage ou un redémarrage du serveur. L'état est en base, dans un dossier du serveur monté dans les conteneurs : une relance ne perd rien.
+
+```bash
+sudo mkdir -p /var/lib/docker/hiatus/tradeagent/data && sudo chown 1000:1000 /var/lib/docker/hiatus/tradeagent/data
+docker compose build
+docker compose up -d                 # démarre hold (la référence) et board
+docker compose ps                    # « healthy » = un cycle récent, pas seulement un processus en vie
+docker compose logs -f board
+docker compose stop board            # arrêt comme Ctrl+C
+docker compose run --rm board status --all
+```
+
+`tradeagent health --profile board` (code 0 ou 1) est ce que Docker interroge : le bot est en bonne santé s'il a enregistré un cycle depuis moins de trois intervalles. Un bot mort ou `halted` ne fait plus de cycle, il est donc signalé lui aussi.
+
+Ces conteneurs n'ont besoin d'aucun secret (argent fictif, prix publics) et n'ouvrent aucun port. **L'interface web n'est pas encore servie depuis le serveur** : elle attend un mode « derrière un proxy » et une identification, à concevoir. **Jamais construit ni lancé** : l'image n'a été ni construite ni essayée, et le projet n'a jamais tourné sous Linux.
+
 ## Backtest : rejouer une période passée
 
 Avant de comparer des agents sur des semaines de paper trading, on peut les faire tourner sur le passé. Par défaut c'est gratuit (prix publics, aucune clé, aucun appel au LLM) et ça prend quelques secondes :

@@ -37,7 +37,7 @@ La ligne `llm` vient d'un lancement fait quelques heures plus tôt : la fenêtre
 - Agent `llm` (prompt version 9) et agent `supervisor` (version 1), ce dernier lançable par `run --agent supervisor`, sans profil ni affichage dans l'interface.
 - Flux d'information (`context.py`) : indice Fear & Greed, taux de financement Kraken Futures, calendrier Fed et CPI de 2026. Lus pour de vrai, rejouables en backtest. Ils ne servent qu'au superviseur, pas aux modèles.
 
-**État du dépôt** : le superviseur, les flux, leurs tests et cette doc ne sont **pas commités** (dernier commit : `39548c9`). Les deux suites sont au vert sur l'arbre de travail (Python 697 passés et 8 ignorés, Node 49). À commiter quand Pierre le demande.
+**État du dépôt** : tout est commité et poussé sur `origin/main` (superviseur et flux : `4dcb293`). Les deux suites sont au vert (Python 697 passés et 8 ignorés, Node 49).
 
 **Dépense réelle d'API en backtest** : environ 5,11 EUR sur l'enveloppe de 10 EUR (`llm.total_budget_eur`), d'après `data/llm-cache/backtest.jsonl`. Ne pas supprimer ce fichier : c'est le registre de la dépense et le cache qui rend les rejeux gratuits.
 

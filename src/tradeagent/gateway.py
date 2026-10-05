@@ -24,6 +24,7 @@ import html
 import json
 import logging
 import re
+import time
 from http.cookies import CookieError, SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs
@@ -31,8 +32,9 @@ from urllib.parse import parse_qs
 from .auth import (LOCK_SECONDS, MIN_PASSWORD_CHARS, MIN_SETUP_CODE_CHARS, SESSION_SECONDS, SETUP_CODE_ENV, Account, AuthError,
                    Throttle, WrongSetupCode)
 from .config import Config, ConfigError
-from .dashboard import DashboardError, build_snapshot
-from .web import SECURITY_HEADERS, STATIC_DIR
+from . import hub
+from .dashboard import REFERENCE_PROFILE, DashboardError, add_reference, build_snapshot, summarize
+from .web import FONT_CACHE, FONTS, HTML_TYPE, SECURITY_HEADERS, STATIC_DIR, profile_page, render_page
 
 log = logging.getLogger(__name__)
 
@@ -42,10 +44,13 @@ MAX_BODY_BYTES = 4096
 SOCKET_TIMEOUT_SECONDS = 10         # une requête incomplète ne garde pas un fil du serveur indéfiniment
 HOST_PATTERN = re.compile(r"(?=.{4,253}$)([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}")
 PROFILE_ASSETS = {
-    "": ("index.html", "text/html; charset=utf-8"),
     "app.css": ("app.css", "text/css; charset=utf-8"),
     "app.js": ("app.js", "text/javascript; charset=utf-8"),
+    **FONTS,
 }
+# Le seul formulaire de la page d'un profil : il ferme la session, il n'agit sur aucun bot.
+LOGOUT_FORM = ('<form class="logout" method="post" action="/logout">'
+               '<button type="submit" class="btn btn-secondary">Se déconnecter</button></form>')
 HEADERS = {
     **SECURITY_HEADERS,
     "Content-Security-Policy": SECURITY_HEADERS["Content-Security-Policy"].replace("form-action 'none'", "form-action 'self'"),
@@ -55,17 +60,20 @@ HEADERS = {
     # « same-origin » : l'origine part vers ce site, rien ne part vers les autres.
     "Referrer-Policy": "same-origin",
 }
-HTML_TYPE = "text/html; charset=utf-8"
+MARK_CURRENT = ' aria-current="page"'
 BAD_LOGIN = "Identifiant ou mot de passe incorrect."
 LOCKED = f"Trop d'essais : la connexion est bloquée pendant {LOCK_SECONDS // 60} minutes."
 
 
-def _page(name: str, **values: str) -> bytes:
-    """Une page du dossier statique, où `{{clé}}` est remplacé par un texte fabriqué par le code, échappé."""
-    text = (STATIC_DIR / name).read_text(encoding="utf-8")
-    for key, value in values.items():
-        text = text.replace("{{" + key + "}}", value)
-    return text.encode("utf-8")
+def _profile_nav(current: str, names: list[str]) -> str:
+    """Fil d'Ariane et liens vers les profils : de la navigation, rien qui agisse sur un bot. Les noms viennent de la
+    liste fixe des profils, jamais de la requête."""
+    links = "".join(
+        f'<a href="/p/{html.escape(name)}/"{MARK_CURRENT if name == current else ""}>{html.escape(name)}</a>'
+        for name in names)
+    return ('<nav class="crumbs" aria-label="Fil d\'Ariane"><a href="/">Profils</a><span aria-hidden="true">/</span>'
+            f'<span class="crumb-current">{html.escape(current)}</span></nav>'
+            f'<nav class="profile-links" aria-label="Autres profils">{links}</nav>')
 
 
 def make_gateway_handler(profiles: dict[str, Config], account: Account, throttle: Throttle, public_host: str,
@@ -104,7 +112,7 @@ def make_gateway_handler(profiles: dict[str, Config], account: Account, throttle
 
         def _form(self, name: str, status: int, message: str = "", head_only: bool = False) -> None:
             note = html.escape(message)
-            self._send(status, _page(name, message=note, min_password=str(MIN_PASSWORD_CHARS)), HTML_TYPE, head_only)
+            self._send(status, render_page(name, message=note, min_password=str(MIN_PASSWORD_CHARS)), HTML_TYPE, head_only)
 
         # -- contrôles ------------------------------------------------------
         def _transport_ok(self, head_only: bool, health: bool = False) -> bool:
@@ -128,6 +136,18 @@ def make_gateway_handler(profiles: dict[str, Config], account: Account, throttle
         def _has_account(self) -> bool:
             return account.exists()
 
+        @staticmethod
+        def _summaries(now: float) -> list[tuple[str, dict | None]]:
+            """Le résumé de chaque profil servi (`None` si sa base est momentanément illisible)."""
+            out: list[tuple[str, dict | None]] = []
+            for name, cfg in profiles.items():
+                try:
+                    out.append((name, summarize(cfg, now)))
+                except DashboardError as exc:
+                    log.warning("résumé indisponible pour %s : %s", name, exc)
+                    out.append((name, None))
+            return out
+
         # -- lecture --------------------------------------------------------
         def _serve(self, head_only: bool) -> None:
             path = self.path.split("?", 1)[0]
@@ -146,6 +166,10 @@ def make_gateway_handler(profiles: dict[str, Config], account: Account, throttle
         def _route(self, path: str, head_only: bool) -> None:
             if path == "/auth.css":
                 self._send(200, (STATIC_DIR / "auth.css").read_bytes(), "text/css; charset=utf-8", head_only)
+                return
+            font = FONTS.get(path[1:])                  # la police des pages de connexion : publique, comme leur style
+            if font is not None:
+                self._send(200, (STATIC_DIR / font[0]).read_bytes(), font[1], head_only, FONT_CACHE)
                 return
             has_account = self._has_account()
             if path == "/setup":
@@ -171,11 +195,16 @@ def make_gateway_handler(profiles: dict[str, Config], account: Account, throttle
                     self._redirect("/login", head_only)
                 return
             if path == "/":
-                links = "\n".join(f'<li><a href="/p/{html.escape(name)}/">{html.escape(name)}</a></li>' for name in profiles)
-                self._send(200, _page("hub.html", profiles=links), HTML_TYPE, head_only)
+                now = time.time()
+                entries = self._summaries(now)
+                count = f"{len(profiles)} profil{'s' if len(profiles) > 1 else ''}"
+                page = render_page("hub.html", profiles=hub.cards(entries, now), compare=hub.comparison(entries), count=count)
+                self._send(200, page, HTML_TYPE, head_only)
                 return
             if path == "/api/profiles":
-                self._json(200, [{"name": name, "path": f"/p/{name}/"} for name in profiles], head_only)
+                rows = [{"name": name, "path": f"/p/{name}/", **(summary or {"has_data": False, "unreadable": True})}
+                        for name, summary in self._summaries(time.time())]
+                self._json(200, rows, head_only)
                 return
             parts = path.split("/")                     # /p/<profil>/<ressource>
             cfg = profiles.get(parts[2]) if len(parts) >= 4 and parts[1] == "p" else None
@@ -185,17 +214,25 @@ def make_gateway_handler(profiles: dict[str, Config], account: Account, throttle
             rest = "/".join(parts[3:])
             if rest == "api/snapshot":
                 try:
-                    self._json(200, build_snapshot(cfg), head_only)
+                    snap = build_snapshot(cfg)
+                    if parts[2] != REFERENCE_PROFILE and REFERENCE_PROFILE in profiles:     # la référence à battre
+                        add_reference(snap, profiles[REFERENCE_PROFILE], REFERENCE_PROFILE)
+                    self._json(200, snap, head_only)
                 except DashboardError as exc:
                     log.warning("instantané indisponible : %s", exc)
                     self._json(503, {"error": "base momentanément illisible, nouvelle tentative au prochain rafraîchissement"},
                                head_only)
                 return
+            if rest == "":
+                page = profile_page("web", parts[2], _profile_nav(parts[2], list(profiles)), LOGOUT_FORM)
+                self._send(200, page, HTML_TYPE, head_only)
+                return
             asset = PROFILE_ASSETS.get(rest)
             if asset is None:
                 self._json(404, {"error": "introuvable"}, head_only)
                 return
-            self._send(200, (STATIC_DIR / asset[0]).read_bytes(), asset[1], head_only)
+            self._send(200, (STATIC_DIR / asset[0]).read_bytes(), asset[1], head_only,
+                       FONT_CACHE if asset[1] == "font/woff2" else None)
 
         def do_GET(self) -> None:  # noqa: N802 (nom imposé par http.server)
             self._serve(head_only=False)

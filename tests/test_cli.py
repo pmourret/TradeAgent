@@ -208,18 +208,23 @@ class _FakeServer:
 def test_web_port_follows_the_profile(project, capsys, monkeypatch, argv, expected):
     seen = {}
 
-    def fake_make_server(cfg, host, port):
-        seen.update(cfg=cfg, host=host, port=port)
+    def fake_make_server(cfg, host, port, profile=None, reference=None):
+        seen.update(cfg=cfg, host=host, port=port, profile=profile, reference=reference)
         return _FakeServer()
 
     monkeypatch.setattr(cli, "make_server", fake_make_server)
     assert run(argv, capsys)[0] == 0
     assert seen["port"] == expected and seen["host"] == "127.0.0.1"
+    assert seen["profile"] == (argv[argv.index("--profile") + 1] if "--profile" in argv else None)    # affiché dans la page
+    if seen["profile"] in (None, "hold"):
+        assert seen["reference"] is None                                       # hold ne se compare pas à lui-même
+    else:
+        assert seen["reference"].database.endswith("paper-hold.db")
 
 
 def test_web_reads_the_database_of_the_profile(project, capsys, monkeypatch):
     seen = {}
-    monkeypatch.setattr(cli, "make_server", lambda cfg, host, port: seen.update(db=cfg.database) or _FakeServer())
+    monkeypatch.setattr(cli, "make_server", lambda cfg, host, port, profile=None, reference=None: seen.update(db=cfg.database) or _FakeServer())
     run(["web", "--profile", "llm"], capsys)
     assert seen["db"].endswith("paper-llm.db")
 

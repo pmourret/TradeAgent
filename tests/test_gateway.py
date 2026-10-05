@@ -301,7 +301,9 @@ def test_une_session_ouverte_voit_les_profils_et_leurs_donnees(served):
     status, _, body = request(served, "GET", "/", cookie=cookie)
     assert status == 200 and 'href="/p/hold/"' in body and 'href="/p/board/"' in body and 'action="/logout"' in body
     status, _, body = request(served, "GET", "/api/profiles", cookie=cookie)
-    assert json.loads(body) == [{"name": "hold", "path": "/p/hold/"}, {"name": "board", "path": "/p/board/"}]
+    rows = json.loads(body)
+    assert [(r["name"], r["path"], r["has_data"]) for r in rows] == [("hold", "/p/hold/", False), ("board", "/p/board/", True)]
+    assert rows[1]["agent"] == "scripted" and rows[1]["state"] == "alive" and isinstance(rows[1]["equity"], float)
     status, headers, body = request(served, "GET", "/p/board/", cookie=cookie)
     assert status == 200 and headers["content-type"].startswith("text/html") and 'src="app.js"' in body
     assert request(served, "GET", "/p/board/app.js", cookie=cookie)[1]["content-type"].startswith("text/javascript")
@@ -411,7 +413,8 @@ def test_les_pages_du_compte_respectent_la_csp(name):
     assert "<script" not in page and not re.findall(r'(?:src|href|action)="https?://', page)
     assert 'method="post"' in page and re.findall(r'action="([^"]+)"', page) in (["/login"], ["/setup"], ["/logout"])
     css = (STATIC_DIR / "auth.css").read_text(encoding="utf-8")
-    assert "@import" not in css and "url(" not in css
+    assert "@import" not in css
+    assert set(re.findall(r"url\(([^)]*)\)", css)) == {f'"fonts/Inter-{w}.woff2"' for w in ("Regular", "Medium", "SemiBold")}
 
 
 def test_le_compose_ne_publie_aucun_port_et_l_interface_ne_peut_pas_ecrire_dans_les_bases():
@@ -442,7 +445,72 @@ def test_par_defaut_serve_n_ecoute_que_sur_la_boucle_locale():
     assert inspect.signature(make_gateway_server).parameters["bind"].default == "127.0.0.1"
 
 
+def test_la_page_d_un_profil_porte_la_navigation_et_la_deconnexion_rien_d_autre(served):
+    cookie = session(served)
+    _, _, body = request(served, "GET", "/p/board/", cookie=cookie)
+    assert '<body data-context="web" data-profile="board">' in body and "{{" not in body
+    assert '<a href="/">Profils</a>' in body
+    assert '<a href="/p/hold/">hold</a>' in body and '<a href="/p/board/" aria-current="page">board</a>' in body
+    # Un seul formulaire, la déconnexion : rien dans la page n'agit sur un bot.
+    assert re.findall(r'<form[^>]*action="([^"]+)"', body) == ["/logout"] and body.count("<button") == 1
+    assert "<input" not in body
+
+
+def test_les_noms_de_profils_sont_echappes_dans_la_navigation():
+    from tradeagent.gateway import _profile_nav
+    bad = '"><script>x</script>'
+    nav = _profile_nav(bad, ["hold", bad])
+    assert "<script>x" not in nav and nav.count("&quot;&gt;&lt;script&gt;") == 3     # fil d'Ariane, adresse et texte du lien
+    assert nav.count('aria-current="page"') == 1
+
+def test_la_police_est_publique_a_la_racine_et_sous_session_dans_un_profil(served):
+    status, headers, _ = request(served, "HEAD", "/fonts/Inter-Regular.woff2")          # la page de connexion en a besoin
+    assert status == 200 and headers["content-type"] == "font/woff2" and int(headers["content-length"]) > 100_000
+    assert "font-src 'self'" in headers["content-security-policy"]
+    assert request(served, "GET", "/fonts/OFL.txt")[0] == 303 and request(served, "GET", "/fonts/../auth.json")[0] == 303
+    assert request(served, "GET", "/p/board/fonts/Inter-Medium.woff2")[0] == 303
+    cookie = session(served)
+    assert request(served, "HEAD", "/p/board/fonts/Inter-Medium.woff2", cookie=cookie)[1]["content-type"] == "font/woff2"
+    assert request(served, "GET", "/p/board/fonts/OFL.txt", cookie=cookie)[0] == 404
+    assert request(served, "GET", "/fonts/OFL.txt", cookie=cookie)[0] == 404
+
+
 def test_la_page_du_bot_reste_sans_formulaire_et_se_sert_en_relatif():
     page = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
     assert "<form" not in page and "<button" not in page and "<input" not in page
     assert 'href="app.css"' in page and 'src="app.js"' in page
+
+
+def test_l_accueil_montre_chaque_profil_avec_ses_chiffres(served):
+    body = request(served, "GET", "/", cookie=session(served))[2]
+    assert "{{" not in body and not re.search(r"\sstyle=", body) and "<script" not in body
+    assert 'href="/p/board/"' in body and "Net " in body and "Muet" in body        # board a tourné, avec une horloge ancienne
+    assert 'href="/p/hold/"' in body and "Aucune donnée" in body                     # hold jamais lancé
+    assert "Face à la référence" in body
+    assert re.findall(r'<form[^>]*action="([^"]+)"', body) == ["/logout"]
+
+
+def test_la_reference_hold_accompagne_l_instantane_des_autres_profils(served, tmp_path):
+    cookie = session(served)
+    assert "reference" not in json.loads(request(served, "GET", "/p/board/api/snapshot", cookie=cookie)[2])   # hold vide
+    hold = Storage(str(tmp_path / "data" / "paper-hold.db"))
+    engine, _, clock, hold = make_engine(default_cfg(database=str(tmp_path / "data" / "paper-hold.db")), ScriptedAgent([]),
+                                         clock=FakeClock(), storage=hold)
+    engine.run_cycle()
+    hold.close()
+    snap = json.loads(request(served, "GET", "/p/board/api/snapshot", cookie=cookie)[2])
+    assert snap["reference"]["profile"] == "hold" and snap["reference"]["net_result"] == pytest.approx(0, abs=1)
+    assert "reference" not in json.loads(request(served, "GET", "/p/hold/api/snapshot", cookie=cookie)[2])
+
+
+def test_l_accueil_echappe_tout_et_n_a_aucun_style_en_ligne():
+    from tradeagent import hub
+    bad = '"><script>x</script>'
+    summary = {"has_data": True, "agent": bad, "state": "dead", "since": 0.0, "risk_tier": bad, "equity": 1012.4,
+               "stake": 1000.0, "net_result": -376.4, "drawdown_pct": 40.3, "life_started": 0.0, "last_update": 0.0,
+               "cycle_seconds": 900.0, "generated_at": 0.0, "series_7d": [[0, 1000.0], [1, 990.0]]}
+    page = hub.cards([(bad, summary), ("hold", {"has_data": False, "cycle_seconds": 900.0}), ("x", None)], 3600.0)
+    page += hub.comparison([(bad, summary), ("hold", dict(summary, net_result=0.0)), ("b", dict(summary, net_result=12.4))])
+    assert "<script>x" not in page and "&lt;script&gt;" in page and not re.search(r"\sstyle=", page)
+    assert "1 012,40 €" in page and "−376,40 €" in page and "±0,00 €" in page and "+12,40 €" in page
+    assert "Mort il y a 60 min · drawdown 40,3 %" in page and "Illisible" in page and "Aucune donnée" in page

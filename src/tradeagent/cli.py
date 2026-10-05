@@ -18,6 +18,7 @@ from .backtest import (BACKTEST_AGENTS, DEFAULT_AGENTS, PAID_AGENTS, compare, fo
 from .budget import InferenceBudget, day_start_ts
 from .auth import SETUP_CODE_ENV, Account
 from .config import ConfigError, load_config
+from .dashboard import REFERENCE_PROFILE
 from .gateway import DEFAULT_PORT as GATEWAY_PORT, make_gateway_server
 from .envfile import load_env_file
 from .exchange import ExchangeError
@@ -312,7 +313,10 @@ def cmd_reset(args: argparse.Namespace) -> int:
 def cmd_web(args: argparse.Namespace) -> int:
     cfg, profile = _load(args)
     port = args.port if args.port is not None else (profile.port if profile else DEFAULT_PORT)
-    server = make_server(cfg, args.host, port)
+    # La référence à battre (`hold`) s'affiche à côté d'un autre profil : sa base n'est que lue.
+    reference = (apply_profile(load_config(args.config), get_profile(REFERENCE_PROFILE))
+                 if profile is not None and profile.name != REFERENCE_PROFILE else None)
+    server = make_server(cfg, args.host, port, profile.name if profile else None, reference=reference)
     host, port = server.server_address[:2]
     url = f"http://{'localhost' if host == '127.0.0.1' else host}:{port}/"
     print(f"interface web en lecture seule : {url}  (Ctrl+C pour arrêter ; le bot, lui, tourne dans `tradeagent run`)")

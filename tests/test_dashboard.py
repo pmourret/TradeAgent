@@ -6,7 +6,8 @@ import pytest
 
 from helpers import START, FakeClock, ScriptedAgent, ScriptedFeed, default_cfg, make_engine, permissive_cfg
 from tradeagent.config import config_from_dict
-from tradeagent.dashboard import MAX_SERIES_POINTS, DashboardError, _connect, build_snapshot, downsample
+from tradeagent.dashboard import (MAX_SERIES_POINTS, DashboardError, _connect, add_reference, build_snapshot, downsample,
+                                  summarize)
 from tradeagent.models import Decision
 from tradeagent.storage import Storage
 
@@ -223,3 +224,39 @@ def test_unreadable_database_raises_a_clean_error(tmp_path):
     path.write_bytes(b"ceci n'est pas une base sqlite" * 50)
     with pytest.raises(DashboardError):
         build_snapshot(default_cfg(database=str(path)), START)
+
+
+# -- résumé d'un profil et référence à battre ------------------------------------------------
+
+def test_summary_carries_numbers_and_state_only(tmp_path):
+    cfg, engine, feed, clock, storage = run(tmp_path)
+    summary = summarize(cfg, clock())
+    snap = build_snapshot(cfg, clock())
+    assert summary["has_data"] and summary["state"] == "alive" and summary["agent"] == "scripted"
+    assert summary["equity"] == snap["money"]["equity"] and summary["net_result"] == snap["money"]["net_result"]
+    assert 1 <= len(summary["series_7d"]) <= 48
+    # Aucun texte de la base : ni raison, ni journal. Seuls des nombres, l'état et des noms fixés par le code.
+    texts = {k: v for k, v in summary.items() if isinstance(v, str)}
+    assert set(texts) == {"agent", "state", "risk_tier"}
+
+
+def test_summary_of_an_empty_profile(tmp_path):
+    assert summarize(default_cfg(database=str(tmp_path / "none.db")), START) == {"has_data": False, "cycle_seconds": 900.0}
+
+
+def test_the_reference_is_added_from_its_own_database_and_never_breaks_the_snapshot(tmp_path):
+    (tmp_path / "bot").mkdir()
+    (tmp_path / "ref").mkdir()
+    cfg, *_, clock, storage = run(tmp_path / "bot")
+    ref_cfg, *_ = run(tmp_path / "ref", agent=ScriptedAgent([]))
+    before = digest(tmp_path / "ref" / "agent.db")
+    snap = add_reference(build_snapshot(cfg, clock()), ref_cfg, "hold", clock())
+    assert snap["reference"]["profile"] == "hold" and snap["reference"]["equity"] == pytest.approx(100.0)
+    assert set(snap["reference"]) == {"profile", "equity", "net_result", "started"}
+    assert digest(tmp_path / "ref" / "agent.db") == before                     # lue, jamais écrite
+    missing = default_cfg(database=str(tmp_path / "absent.db"))
+    assert "reference" not in add_reference(build_snapshot(cfg, clock()), missing, "hold", clock())
+    (tmp_path / "ref" / "agent.db").write_bytes(b"corrompu" * 200)            # illisible : pas de carte, pas d'erreur
+    assert "reference" not in add_reference(build_snapshot(cfg, clock()), ref_cfg, "hold", clock())
+    empty = build_snapshot(default_cfg(database=str(tmp_path / "rien.db")), START)
+    assert "reference" not in add_reference(empty, ref_cfg, "hold", START)    # rien à comparer

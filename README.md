@@ -81,7 +81,15 @@ tradeagent run --profile llm               # terminal 1 : le bot
 tradeagent web --profile llm --open        # terminal 2 : l'interface du même profil
 ```
 
-Un tableau de bord pour voir le bot travailler : état (en vie, prudent, défensif, mort, arrêté), equity et courbe avec les zones de paliers, **résultat net après coût de l'API**, distance à la mort, portefeuille, dépense d'inférence (jour, total, 7 derniers jours), journal des décisions avec le verdict du code, évènements. Il suit le thème clair/sombre de ton système, se rafraîchit toutes les 15 s, s'adapte au téléphone et prévient si le bot n'a pas fait de cycle depuis longtemps. Les « attentes » consécutives du LLM sont regroupées sur une ligne pour ne pas noyer les ordres.
+Une page pour voir le bot travailler, dite « Le conseil » : à gauche les sous-agents du board et les positions qu'ils réclament, au centre le portefeuille unique qui exécute (equity, **résultat net après coût de l'API**, drawdown, répartition, variation du jour, achats du jour), puis les marges (distance à la mort et aux niveaux de sortie), la courbe d'equity nette du loyer, le journal des décisions avec le verdict du code, et les évènements. Pour un agent qui appelle l'API, un bloc « Loyer d'inférence » s'ajoute (jour, total, 7 derniers jours). Thème sombre uniquement. Elle se rafraîchit toutes les 15 s et s'adapte à sa propre largeur (téléphone, fenêtre de l'application redimensionnée). Les « attentes » consécutives sont regroupées en une entrée pour ne pas noyer les ordres.
+
+Le mouvement ne montre que deux choses vraies : le temps qui passe vers le prochain cycle (barre en haut de page, compte à rebours) et l'arrivée d'une décision. Six états sont distingués, toujours par un glyphe et un mot, jamais par la couleur seule : en vie (paliers normal, prudent, défensif), mort, arrêté, bot muet (plus de cycle depuis longtemps), connexion au serveur perdue (tout se fige), aucune donnée. Avec « réduire les animations » réglé sur ton système, chaque animation a une version fixe.
+
+La page locale (`tradeagent web`, celle de l'application de bureau) n'affiche ni fil d'Ariane ni déconnexion ; servie derrière un proxy (`tradeagent serve`), elle porte la navigation entre profils et le bouton de déconnexion.
+
+À côté de chaque profil autre que `hold`, une carte « Référence · hold » rappelle la référence à battre : son equity et l'écart de résultat net. Elle est lue en lecture seule dans la base de `hold` (en local, celle du profil `hold` ; derrière un proxy, seulement si `hold` fait partie des profils servis) et disparaît si cette base est vide ou illisible. L'écart n'a de sens que si les deux vies ont commencé ensemble : un `reset` d'un seul des deux profils le fausse.
+
+Derrière un proxy, l'accueil montre une carte par profil (état, equity, résultat net, courbe des 7 derniers jours) et leurs résultats nets sur une même échelle. Il est rendu par le serveur, sans script : recharge la page pour l'actualiser. `/api/profiles` donne les mêmes résumés en JSON : des nombres et l'état de chaque bot, aucun texte de la base.
 
 C'est volontairement **de la lecture seule** : pas de bouton qui achète, vend, reprend ou réinitialise. Ce qui engage l'argent ou relance un bot arrêté reste en ligne de commande.
 
@@ -92,10 +100,10 @@ C'est volontairement **de la lecture seule** : pas de bouton qui achète, vend, 
 | GET / HEAD seulement | Tout le reste reçoit `405` |
 | Base ouverte en lecture seule | Même un bug ne peut rien écrire ; lire ne crée jamais la base |
 | Texte du LLM = texte | Les raisons données par l'agent sont affichées via `textContent`, jamais comme du HTML ; vérifié dans un vrai navigateur avec une charge `<img onerror>` |
-| CSP stricte | Ni script ni style en ligne, aucune ressource externe, aucun cadre ; les polices sont celles de ton système |
+| CSP stricte | Ni script ni style en ligne, aucune ressource externe, aucun cadre ; la police (Inter, licence OFL, `static/fonts/`) est servie par ce serveur depuis trois fichiers fixes (`font-src 'self'`), avec celles de ton système en repli |
 | Rien de secret | L'API ne renvoie ni clé, ni variable d'environnement, ni chemin de fichier ; le détail des erreurs internes reste côté serveur |
 
-La maquette a été conçue dans Claude Design avant d'être codée.
+La maquette a été conçue dans Claude Design avant d'être codée (`docs/handoffs/frontend/`). Pour la comparer au rendu réel : `tools/frontcheck/preview.py` sert la page avec un instantané figé à la place de la base, et `tools/frontcheck/capture.py` (Playwright, hors du venv) en tire une capture par écran de référence. Ces deux outils ne font pas partie du paquet installé.
 
 ### Application de bureau (Electron)
 
@@ -116,6 +124,8 @@ Elle sert aussi à **démarrer et arrêter les bots** :
 - un bot qui s'arrête sans qu'on l'ait demandé (clé API absente, base déjà utilisée par un autre bot, mort, plantage) est signalé avec ses dernières lignes ;
 - la sortie de chaque bot est écrite dans `data/logs/<profil>.log` (1 Mo, 3 fichiers d'historique) ; *Bots → Ouvrir le dossier des journaux*.
 
+**Mode distant.** Quand les bots tournent sur un serveur (voir « Sur un serveur »), l'application peut afficher son interface au lieu de lancer la sienne : menu Serveur, « Se connecter à un serveur… », puis l'adresse HTTPS. Elle vérifie qu'un serveur tradeagent y répond, retient l'adresse dans `data/desktop.json` et redémarre. Ensuite : la page de connexion du serveur, puis un onglet par profil. Dans ce mode elle ne fait que montrer : le menu Bots n'offre aucune action, rien n'est lancé sur le poste (pas besoin de Python), la fenêtre ne navigue que vers ce serveur, et les notifications de bureau lisent le serveur. La connexion reste ouverte d'un lancement à l'autre (sept jours au plus). Retour au mode local : menu Serveur. En version portable, le premier lancement commence par ce choix. **Vu pour de vrai jusqu'à la page de connexion seulement** ; la suite (onglets après connexion, notifications, session expirée, fenêtre de choix) n'a été vue par personne.
+
 Ce que l'application ne fait pas, volontairement : reprendre un bot `halted` (`tradeagent resume`) ou repartir d'une nouvelle vie (`tradeagent reset`) restent en ligne de commande, et aucune page ne peut agir sur un bot (les actions sont dans les menus natifs, pas dans l'interface web). Elle ne voit pas non plus un bot lancé ailleurs (`scripts/start`, un terminal) : sa pastille reste vide, et vouloir le démarrer une seconde fois est refusé par le verrou de la base.
 
 Elle **prévient par une notification de bureau** quand l'état d'un profil change. Elle relit pour cela l'instantané en lecture seule de chaque profil toutes les 15 secondes ; un clic sur la notification ouvre la fenêtre sur le profil concerné, rien de plus :
@@ -124,8 +134,6 @@ Elle **prévient par une notification de bureau** quand l'état d'un profil chan
 |---|---|
 | Le bot est mort | Le kill switch s'est déclenché (mise perdue ou drawdown maximal atteint). La notification donne la raison et demande de vérifier sur la page qu'il ne reste aucune position : elle n'affirme pas que tout est vendu, la liquidation pouvant être désactivée ou avoir échoué |
 | Le bot est suspendu | Passage en `halted` : trop d'erreurs d'affilée, rien n'est vendu. Le détail de l'erreur reste sur la page du profil |
-**Mode distant.** Quand les bots tournent sur un serveur (voir « Sur un serveur »), l'application peut afficher son interface au lieu de lancer la sienne : menu Serveur, « Se connecter à un serveur… », puis l'adresse HTTPS. Elle vérifie qu'un serveur tradeagent y répond, retient l'adresse dans `data/desktop.json` et redémarre. Ensuite : la page de connexion du serveur, puis un onglet par profil. Dans ce mode elle ne fait que montrer : le menu Bots n'offre aucune action, rien n'est lancé sur le poste (pas besoin de Python), la fenêtre ne navigue que vers ce serveur, et les notifications de bureau lisent le serveur. La connexion reste ouverte d'un lancement à l'autre (sept jours au plus). Retour au mode local : menu Serveur. En version portable, le premier lancement commence par ce choix. **Vu pour de vrai jusqu'à la page de connexion seulement** ; la suite (onglets après connexion, notifications, session expirée, fenêtre de choix) n'a été vue par personne.
-
 | Changement de palier | Passage à prudent, défensif, ou retour à normal (le palier dépend du drawdown, c'est-à-dire du recul du portefeuille depuis son plus haut) |
 | Budget API épuisé | Le plafond du jour (UTC) ou le plafond total vient d'être atteint : l'agent est en pause, les garde-fous et le kill switch continuent |
 | Le bot ne donne plus de nouvelles | Un bot démarré par l'application n'a réussi aucun cycle depuis 3 cycles et 2 minutes (bot figé, ou flux de prix en panne : un cycle en erreur n'écrit rien) |

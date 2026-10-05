@@ -13,7 +13,7 @@ Tu touches à ce qui protège l'argent. Avant de modifier :
 
 Après la modification, deux vérifications obligatoires, à déléguer :
 
-- **Mutation** (sous-agent `mutation`) : dans une copie temporaire du projet, remplacer *un* motif par sa version cassée, lancer les tests concernés, attendre un échec. Un mutant qui survit = test manquant, ou mutant équivalent (à documenter). Derniers bilans : 14/14 sur le web, 38/39 sur le lanceur (le survivant est équivalent : le ramasse-miettes de CPython ferme le fichier de toute façon).
+- **Mutation** (sous-agent `mutation`) : dans une copie temporaire du projet, remplacer *un* motif par sa version cassée, lancer les tests concernés, attendre un échec. Un mutant qui survit = test manquant, ou mutant équivalent (à documenter). Derniers bilans : 29/29 sur le web et le proxy (refonte « Le conseil », 2026-10-05 : police, contexte de la page, navigation, échappement des noms de profils), 14/14 sur le web avant, 38/39 sur le lanceur (le survivant est équivalent : le ramasse-miettes de CPython ferme le fichier de toute façon).
 - **Relecture** (sous-agent `relecteur-invariants`) : le diff contre les 12 invariants.
 
 Rappels qui ont déjà servi :

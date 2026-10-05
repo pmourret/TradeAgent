@@ -63,6 +63,53 @@ def test_index_and_assets_are_served_with_strict_headers(served):
         assert "frame-ancestors 'none'" in csp
 
 
+FONT_PATHS = ["/fonts/Inter-Regular.woff2", "/fonts/Inter-Medium.woff2", "/fonts/Inter-SemiBold.woff2"]
+
+
+@pytest.mark.parametrize("path", FONT_PATHS)
+def test_the_font_is_served_by_this_server_and_allowed_by_the_csp(served, path):
+    # Aucune ressource externe : la police vient d'ici, et la CSP n'autorise qu'elle (font-src 'self').
+    status, headers, body = request(served, "GET", path)
+    assert status == 200 and headers["content-type"] == "font/woff2" and body[:4] == b"wOF2"
+    assert headers["x-content-type-options"] == "nosniff"
+    assert "font-src 'self'" in headers["content-security-policy"]
+    assert path[1:] in CSS
+
+
+@pytest.mark.parametrize("path", ["/fonts/", "/fonts/OFL.txt", "/fonts/Inter-Bold.woff2", "/fonts/../app.js",
+                                  "/fonts/Inter-Regular.woff2/x", "/fonts"])
+def test_only_the_three_font_files_are_served(served, path):
+    assert request(served, "GET", path)[0] == 404
+
+
+def test_the_local_page_declares_its_context_and_has_no_form(served):
+    # La page locale est celle de l'application de bureau : ni session, ni fil d'Ariane, ni formulaire.
+    body = request(served, "GET", "/")[2].decode("utf-8")
+    assert '<body data-context="electron" data-profile="">' in body
+    assert "{{" not in body and "<form" not in body and "<button" not in body and "/logout" not in body
+
+
+def test_the_profile_name_is_escaped_in_the_page(tmp_path):
+    from tradeagent.web import make_handler, profile_page
+    assert make_handler(default_cfg(database=str(tmp_path / "x.db")), "board")
+    page = profile_page("electron", '"><script>x</script>', "").decode("utf-8")
+    assert "<script>x" not in page and "&quot;&gt;&lt;script&gt;" in page
+
+
+def test_the_profile_name_shown_in_the_header_is_escaped_too(tmp_path):
+    # Le nom vient aujourd'hui d'une liste fixe, mais le serveur ne doit pas compter dessus.
+    server = make_server(default_cfg(database=str(tmp_path / "x.db")), "127.0.0.1", 0, profile='"><script>x</script>')
+    thread = threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.02}, daemon=True)
+    thread.start()
+    try:
+        body = request({"port": server.server_address[1]}, "GET", "/")[2].decode("utf-8")
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
+    assert "<script>x" not in body and body.count("&quot;&gt;&lt;script&gt;x&lt;/script&gt;") == 2    # attribut et en-tête
+    assert '<span class="profile-name">' in body
+
 def test_snapshot_endpoint_returns_json(served):
     status, headers, body = request(served, "GET", "/api/snapshot")
     snap = json.loads(body)
@@ -188,6 +235,15 @@ def test_html_is_compatible_with_the_csp():
     assert "<script>" not in HTML                                   # seul <script src> est autorisé
     assert not re.findall(r'(?:src|href)="https?://', HTML + CSS)   # aucune ressource externe
     assert "@import" not in CSS and "url(http" not in CSS
+    assert set(re.findall(r"url\(([^)]*)\)", CSS)) == {f'"{path[1:]}"' for path in FONT_PATHS}   # rien d'autre que la police
+    assert "{{context}}" in HTML and "{{nav}}" in HTML and "{{account}}" in HTML                # remplis par le serveur
+
+
+def test_the_page_is_dark_only_and_keeps_a_calm_version_of_every_animation():
+    assert "prefers-color-scheme" not in CSS
+    reduced = CSS.split("@media (prefers-reduced-motion: reduce)")[1]
+    assert "animation: none !important" in reduced and "transition: none !important" in reduced
+    assert "Paper trading, argent fictif" in HTML
 
 
 # -- port déjà pris ----------------------------------------------------------------------------------------------------
@@ -204,3 +260,18 @@ def test_port_already_in_use_gives_a_clear_message_not_a_traceback():
             make_server(default_cfg(), "127.0.0.1", port)
     finally:
         blocker.close()
+
+
+def test_the_local_snapshot_carries_the_reference_when_one_is_given(served, tmp_path):
+    ref = default_cfg(database=str(served["db"]))          # une base qui a des données sert de référence
+    server = make_server(served["cfg"], "127.0.0.1", 0, profile="board", reference=ref)
+    thread = threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.02}, daemon=True)
+    thread.start()
+    try:
+        snap = json.loads(request({"port": server.server_address[1]}, "GET", "/api/snapshot")[2])
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
+    assert snap["reference"]["profile"] == "hold"
+    assert "reference" not in json.loads(request(served, "GET", "/api/snapshot")[2])     # pas de référence donnée

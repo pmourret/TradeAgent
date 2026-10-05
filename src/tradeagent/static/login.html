@@ -3,22 +3,29 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="color-scheme" content="dark light">
+<meta name="color-scheme" content="dark">
 <title>tradeagent</title>
 <link rel="icon" href="data:,">
 <link rel="stylesheet" href="/auth.css">
 </head>
-<body>
-<main class="box">
-  <div class="brand">tradeagent</div>
-  <h1>Connexion</h1>
+<body class="auth-page">
+<main class="auth">
+  <div class="auth-brand">
+    <span class="brand">tradeagent</span>
+    <span class="badge">Paper trading, argent fictif</span>
+  </div>
+  <div class="auth-title">
+    <h1>Connexion</h1>
+  </div>
   <p class="note" role="alert">{{message}}</p>
   <form method="post" action="/login">
-    <label>Identifiant <input name="user" autocomplete="username" required autofocus></label>
-    <label>Mot de passe <input name="password" type="password" autocomplete="current-password" required></label>
-    <button type="submit">Se connecter</button>
+    <div class="field"><label for="user">Identifiant</label>
+      <input id="user" class="input" name="user" autocomplete="username" required autofocus></div>
+    <div class="field"><label for="password">Mot de passe</label>
+      <input id="password" class="input" name="password" type="password" autocomplete="current-password" required></div>
+    <button type="submit" class="btn btn-primary btn-block">Se connecter</button>
   </form>
-  <p class="muted">Interface en lecture seule. Argent fictif.</p>
+  <p class="fine">Interface en lecture seule : rien ici n'agit sur un agent.</p>
 </main>
 </body>
 </html>

@@ -23,7 +23,7 @@ tradeagent = "tradeagent.cli:main"
 where = ["src"]
 
 [tool.setuptools.package-data]
-tradeagent = ["static/*"]
+tradeagent = ["static/*", "static/fonts/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

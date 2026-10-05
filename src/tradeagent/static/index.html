@@ -3,162 +3,140 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="color-scheme" content="dark light">
+<meta name="color-scheme" content="dark">
 <title>tradeagent</title>
 <link rel="icon" href="data:,">
 <link rel="stylesheet" href="app.css">
 <script src="app.js" defer></script>
 </head>
-<body>
-<div class="page">
+<body data-context="{{context}}" data-profile="{{profile}}">
+<div id="page" class="page" data-mode="large">
+
+  <div id="cyclebar" class="cyclebar" aria-hidden="true"><i></i></div>
 
   <header class="top">
-    <div class="top-left">
-      <span class="brand">tradeagent</span>
-      <span class="badge">Paper trading · argent fictif</span>
-    </div>
-    <div class="top-right">
-      <span id="botnote" class="chip chip-warn" hidden></span>
-      <span id="chipAgent" class="chip" hidden></span>
-      <span id="chipModel" class="chip mono" hidden></span>
-      <span id="updated" class="muted" aria-live="polite">Chargement…</span>
-    </div>
+    <span class="brand">tradeagent</span>
+    {{nav}}
+    <span class="badge">Paper trading, argent fictif</span>
+    <span class="fresh"><span id="freshDot" class="fresh-dot" aria-hidden="true"></span><span id="updated">Chargement…</span></span>
+    <span class="slot-account"></span>
+    {{account}}
   </header>
 
-  <div id="banner" class="banner" role="status" hidden>
-    <div id="bannerTitle" class="banner-title"></div>
-    <div id="bannerText"></div>
-  </div>
-
-  <section id="empty" class="empty-card" hidden>
-    <svg width="32" height="32" viewBox="0 0 32 32" fill="none" stroke="var(--ok)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 18h6l3-9 5 15 3-6h9"></path></svg>
-    <h1>Aucune donnée pour l'instant</h1>
-    <p class="muted">Le bot n'a encore jamais tourné avec cette configuration. Lance une simulation hors ligne, sans clé ni réseau : cette page se remplira toute seule.</p>
-    <pre>tradeagent run --agent llm-fake --feed synthetic \
-  --cycle-seconds 0 --max-cycles 20</pre>
-    <p class="muted small">Pour de vrais prix publics, remplace <code>synthetic</code> par <code>ccxt</code>. Pour le vrai LLM, remplace <code>llm-fake</code> par <code>llm</code> (clé API dans le fichier <code>.env</code>).</p>
+  <section id="empty" class="empty" hidden>
+    <div class="empty-card">
+      <span class="empty-glyph" aria-hidden="true"><i></i></span>
+      <h1>Aucune donnée pour l'instant</h1>
+      <p>Le bot de ce profil n'a encore jamais tourné. Dès son premier cycle, cette page se remplira toute seule : les sous-agents, le portefeuille et la référence à battre.</p>
+      <pre id="emptyCommand">tradeagent run</pre>
+      <p class="fine">Lancer un bot reste en ligne de commande : cette page ne fait que lire.</p>
+    </div>
+    <div class="ghosts" aria-hidden="true">
+      <div class="ghost">Sous-agents</div>
+      <div class="ghost ghost-wide">Portefeuille unique</div>
+      <div class="ghost">Référence hold</div>
+    </div>
   </section>
 
-  <main id="dash" hidden>
+  <main id="dash" class="main" hidden>
 
-    <section class="kpis" aria-label="Indicateurs">
-      <div class="tile">
-        <div class="label">État</div>
-        <div id="pill" class="pill"><span id="pillIcon" class="pill-icon"></span><span id="pillLabel"></span></div>
-        <div id="stateSub" class="muted small"></div>
-      </div>
-      <div class="tile">
-        <div class="label">Equity</div>
-        <div id="kEquity" class="value mono"></div>
-        <div id="kEquitySub" class="muted small"></div>
-      </div>
-      <div class="tile">
-        <div class="label">Résultat net</div>
-        <div id="kNet" class="value mono"></div>
-        <div id="kNetSub" class="muted small"></div>
-      </div>
-      <div class="tile">
-        <div class="label">Drawdown</div>
-        <div id="kDd" class="value mono"></div>
-        <div id="kDdSub" class="muted small"></div>
-      </div>
-      <div id="tileApi" class="tile">
-        <div class="label">API aujourd'hui</div>
-        <div id="kApi" class="value mono"></div>
-        <div id="kApiSub" class="muted small"></div>
-      </div>
-    </section>
-
-    <div class="row">
-      <section class="card grow-2">
-        <div class="card-head">
-          <h2 id="chartTitle">Equity depuis la mise</h2>
-          <span id="chartMeta" class="muted small"></span>
-        </div>
-        <div id="chart" class="chart" role="img" aria-label="Courbe d'equity nette du loyer">
-          <div id="plot" class="plot"></div>
-        </div>
-      </section>
-
-      <div class="col grow-1">
-        <section class="card">
-          <h2>Distance à la mort</h2>
-          <div class="gauge">
-            <div id="gaugeTrack" class="gauge-track"></div>
-            <div id="gaugeFill" class="gauge-fill"></div>
-            <div id="gaugeMarks"></div>
-          </div>
-          <p id="gaugeText" class="muted small"></p>
-        </section>
-        <section class="card">
-          <h2>Aujourd'hui</h2>
-          <div id="dayRows" class="kv"></div>
-        </section>
+    <div id="banner" class="banner" role="status" hidden>
+      <span id="bannerIcon" class="banner-icon"></span>
+      <div class="banner-body">
+        <span id="bannerTitle" class="banner-title"></span>
+        <span id="bannerText" class="banner-text"></span>
       </div>
     </div>
 
-    <div class="row">
-      <section class="card grow-3">
-        <h2>Portefeuille</h2>
-        <div id="alloc" class="alloc" aria-hidden="true"></div>
-        <div class="scroll">
-          <div class="table positions">
-            <div class="thead"><span>Actif</span><span class="r">Quantité</span><span class="r">Prix</span><span class="r">Valeur</span><span class="r">Part</span></div>
-            <div id="posRows"></div>
-          </div>
+    <p class="cadence">
+      <span><span id="cadLead"></span> <b id="cadValue"></b></span>
+      <span id="cadMeta" class="cad-meta"></span>
+      <span id="deliberating" class="deliberating" hidden></span>
+    </p>
+
+    <div class="scene">
+      <div class="stage">
+
+        <section class="sleeves" aria-labelledby="sleevesTitle">
+          <h2 id="sleevesTitle" class="over">Sous-agents</h2>
+          <div id="sleeveList" class="sleeve-list"></div>
+        </section>
+
+        <div class="link" aria-hidden="true">
+          <span class="link-line"></span>
+          <span class="link-label">cibles</span>
+          <span id="orderDot" hidden></span>
         </div>
-        <div id="boardBox" hidden>
-          <div class="muted small spaced">Board : ce que réclament les sous-agents</div>
-          <div class="scroll">
-            <div class="table claims">
-              <div class="thead"><span>Sous-agent</span><span>Actif</span><span class="r">Quantité</span><span class="r">Valeur</span><span class="r">Sortie à</span><span class="r">Marge</span></div>
-              <div id="boardRows"></div>
+
+        <section class="portfolio" aria-labelledby="portfolioTitle">
+          <div class="portfolio-head">
+            <h2 id="portfolioTitle" class="over">Portefeuille unique</h2>
+            <span id="status" class="status"><span id="statusIcon" class="status-icon"></span><span id="statusLabel"></span></span>
+          </div>
+          <div id="equityBox" class="equity"><span id="equity"></span></div>
+          <div class="facts">
+            <span>Résultat net <b id="net"></b></span>
+            <span>Drawdown <b id="drawdown"></b></span>
+            <span id="life"></span>
+          </div>
+          <p id="rent" class="rent" hidden></p>
+          <div id="alloc" class="alloc" aria-hidden="true"></div>
+          <div id="positions" class="positions"></div>
+          <div class="today">
+            <span>Aujourd'hui <b id="dayPnl"></b></span>
+            <span id="buysBox" class="buys">Achats <span id="buyPips" class="pips" aria-hidden="true"></span> <span id="buys"></span></span>
+          </div>
+          <div id="announce" class="announce" aria-live="polite"></div>
+          <div class="slot-controls"></div>
+        </section>
+
+        <div id="reference" hidden></div>
+
+      </div>
+
+      <div class="body">
+        <div class="col">
+          <section class="block margins">
+            <h2>Marges</h2>
+            <div class="rail-group">
+              <div class="rail-head"><span>Mort de l'agent</span><span id="deathText" class="rail-value"></span></div>
+              <div id="deathRail" class="rail rail-death">
+                <div id="deathFill" class="margin-fill death-fill"></div>
+                <div id="deathMarks"></div>
+              </div>
             </div>
-          </div>
-          <div id="boardNote" class="muted small"></div>
+            <div id="claimRails"></div>
+          </section>
+          <section class="block">
+            <div class="block-head"><h2>Equity depuis la mise</h2><span id="chartMeta" class="meta"></span></div>
+            <div id="chart" class="chart" role="img" aria-label="Courbe d'equity"></div>
+          </section>
+          <section id="apiBlock" class="block" hidden>
+            <div class="block-head"><h2>Loyer d'inférence</h2><span id="apiCadence" class="meta"></span></div>
+            <div id="apiMeters" class="meters"></div>
+            <div id="apiBars" class="bars" aria-hidden="true"></div>
+            <div id="apiBarLabels" class="bar-labels" aria-hidden="true"></div>
+            <p id="apiNote" class="fine"></p>
+          </section>
         </div>
-      </section>
-
-      <section id="apiCard" class="card grow-2">
-        <div class="card-head">
-          <h2>Loyer d'inférence</h2>
-          <span id="apiCadence" class="muted small"></span>
+        <div class="col">
+          <section class="block journal">
+            <div class="block-head"><h2>Ce qui a été décidé</h2><span id="journalMeta" class="meta"></span></div>
+            <div id="journal" class="entries"></div>
+          </section>
+          <section class="block">
+            <h2>Évènements</h2>
+            <div id="events" class="events"></div>
+          </section>
         </div>
-        <div id="apiMeters" class="meters"></div>
-        <div>
-          <div class="muted small spaced">Dépense par jour</div>
-          <div id="apiBars" class="bars"></div>
-          <div id="apiBarLabels" class="bar-labels"></div>
-        </div>
-        <div id="apiNote" class="muted small"></div>
-      </section>
-    </div>
-
-    <div class="row">
-      <section class="card grow-3">
-        <div class="card-head">
-          <h2>Journal des décisions</h2>
-          <span id="journalMeta" class="muted small"></span>
-        </div>
-        <div class="scroll">
-          <div class="table journal">
-            <div class="thead"><span>Heure</span><span>Décision</span><span>Verdict du code</span><span>Raison donnée par l'agent</span></div>
-            <div id="journalRows"></div>
-          </div>
-        </div>
-      </section>
-
-      <section class="card grow-1">
-        <h2>Évènements</h2>
-        <div id="eventRows" class="events"></div>
-      </section>
+      </div>
     </div>
 
   </main>
 
-  <footer class="foot muted small">
-    <span>Lecture seule · actualisation automatique toutes les 15 s · heures dans le fuseau de ton navigateur.</span>
-    <span>Reprendre un bot arrêté ou repartir d'une nouvelle vie reste volontairement en ligne de commande : <code>tradeagent resume</code> · <code>tradeagent reset</code></span>
+  <footer class="foot">
+    <span>Lecture seule · actualisation toutes les 15 s · heures dans ton fuseau.</span>
+    <span>Reprendre un bot arrêté ou repartir d'une nouvelle vie reste en ligne de commande.</span>
   </footer>
 
 </div>

@@ -12,4 +12,7 @@ paths:
 - Rien de secret dans le snapshot : ni clé, ni variable d'environnement, ni chemin de fichier.
 - Ces règles sont des tests (`tests/test_web.py`, `tests/test_dashboard.py`), pas des conventions : un changement ici se vérifie par mutation (sous-agent `mutation`).
 - L'interface valorise les positions avec `last_quotes`, écrit par le moteur : ne pas le supprimer.
+- `index.html` est un gabarit (`{{context}}`, `{{profile}}`, `{{nav}}`, `{{account}}`) : il ne contient lui-même aucun formulaire ; seul `gateway.py` y injecte la déconnexion. Toute valeur injectée est fabriquée par le code et échappée.
+- Police : trois fichiers fixes de `static/fonts/`, jamais un chemin tiré de la requête. Thème sombre uniquement, aucun tiret cadratin dans les textes.
+- Comparer aux maquettes : `tools/frontcheck/capture.py` (avec `D:\SDKs\Pyhton310-6\python.exe`, qui a Playwright).
 - Playwright n'est pas dans le venv : pour vérifier dans un vrai navigateur, utiliser le Python système, ou l'application de bureau (sous-agent `verif-desktop`).

@@ -3,22 +3,36 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="color-scheme" content="dark light">
+<meta name="color-scheme" content="dark">
 <title>tradeagent</title>
 <link rel="icon" href="data:,">
 <link rel="stylesheet" href="/auth.css">
 </head>
 <body>
-<main class="box">
-  <div class="brand">tradeagent</div>
-  <h1>Profils</h1>
-  <ul class="profiles">
+<svg class="defs" width="0" height="0" aria-hidden="true"><defs>
+  <pattern id="hatch" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+    <rect class="hatch-back" width="6" height="6"/><rect class="hatch-line" width="3" height="6"/>
+  </pattern>
+</defs></svg>
+<div class="page">
+  <header class="top">
+    <span class="brand">tradeagent</span>
+    <span class="badge">Paper trading, argent fictif</span>
+    <form class="logout" method="post" action="/logout">
+      <button type="submit" class="btn btn-secondary">Se déconnecter</button>
+    </form>
+  </header>
+  <main class="hub">
+    <div class="hub-title">
+      <h1>Profils</h1>
+      <p>{{count}} · lecture seule</p>
+    </div>
+{{compare}}
+    <ul class="profiles">
 {{profiles}}
-  </ul>
-  <form method="post" action="/logout">
-    <button type="submit" class="quiet">Se déconnecter</button>
-  </form>
-  <p class="muted">Interface en lecture seule. Argent fictif.</p>
-</main>
+    </ul>
+    <p class="fine">Démarrer ou arrêter un bot reste hors de cette page.</p>
+  </main>
+</div>
 </body>
 </html>

@@ -27,6 +27,9 @@ JOURNAL_ROWS = 60   # les « attentes » consécutives sont regroupées à l'aff
 FILL_ROWS = 20
 EVENT_ROWS = 20
 API_DAYS = 7
+SUMMARY_DAYS = 7      # courbe miniature de l'accueil
+SUMMARY_POINTS = 48
+REFERENCE_PROFILE = "hold"   # la référence à battre : ne fait rien
 
 
 class DashboardError(RuntimeError):
@@ -215,6 +218,39 @@ def _fill(snap: dict[str, Any], db: sqlite3.Connection, cfg: Config, now: float)
             "llm_calls": db.execute("SELECT COUNT(*) FROM llm_calls").fetchone()[0],
         },
     })
+    return snap
+
+
+def summarize(cfg: Config, now: float | None = None) -> dict[str, Any]:
+    """Résumé d'un profil, pour l'accueil et pour la carte de la référence : des nombres et l'état, aucun texte de
+    la base (ni raison de mort, ni journal). Lève `DashboardError` comme `build_snapshot`."""
+    snap = build_snapshot(cfg, now)
+    if not snap["has_data"]:
+        return {"has_data": False, "cycle_seconds": snap["cycle_seconds"]}
+    money, since = snap["money"], snap["generated_at"] - SUMMARY_DAYS * 86_400
+    recent = [p for p in snap["equity_series"] if p[0] >= since] or snap["equity_series"][-1:]
+    return {
+        "has_data": True, "agent": snap["agent"], "state": snap["status"]["state"], "since": snap["status"]["since"],
+        "risk_tier": snap["risk_tier"], "equity": money["equity"], "stake": money["stake"],
+        "net_result": money["net_result"], "drawdown_pct": money["drawdown_pct"],
+        "life_started": snap["life"]["started"], "last_update": money["last_update"],
+        "cycle_seconds": snap["cycle_seconds"], "generated_at": snap["generated_at"],
+        "series_7d": downsample(recent, SUMMARY_POINTS),
+    }
+
+
+def add_reference(snap: dict[str, Any], ref_cfg: Config, name: str, now: float | None = None) -> dict[str, Any]:
+    """Ajoute à l'instantané d'un bot le résultat de la référence à battre (`hold`), lu en lecture seule dans SA base.
+    Une référence illisible ou vide ne casse jamais l'instantané : la carte n'est simplement pas affichée."""
+    if not snap.get("has_data"):
+        return snap
+    try:
+        ref = summarize(ref_cfg, now)
+    except DashboardError:
+        return snap
+    if ref["has_data"]:
+        snap["reference"] = {"profile": name, "equity": ref["equity"], "net_result": ref["net_result"],
+                             "started": ref["life_started"]}
     return snap
 
 

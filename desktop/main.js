@@ -22,6 +22,11 @@
  *  - elle ne peut ni naviguer ni charger quoi que ce soit hors de son serveur local, ni ouvrir de fenêtre,
  *    ni obtenir de permission (caméra, notifications...) ;
  *  - on n'affiche un port que si c'est bien notre serveur qui y répond.
+ *
+ * Mode distant (lib/remote.js) : au lieu de lancer ses propres interfaces, l'application affiche celle d'un
+ * serveur (`tradeagent serve`, en HTTPS). Elle ne fait alors que montrer : aucun bot n'est démarré ni arrêté d'ici,
+ * la fenêtre ne navigue que vers ce serveur, et la connexion se fait sur les pages du serveur lui-même. Le choix
+ * (serveur ou cet ordinateur) est gardé dans data/desktop.json ; en changer redémarre l'application.
  */
 const { app, BrowserWindow, WebContentsView, Menu, Notification, Tray, dialog, ipcMain, nativeImage, session, shell } = require("electron");
 const { spawn } = require("node:child_process");
@@ -31,9 +36,12 @@ const backend = require("./lib/backend");
 const { Supervisor } = require("./lib/supervisor");
 const { Watcher } = require("./lib/notifier");
 const setup = require("./lib/setup");
+const remote = require("./lib/remote");
 
 const TAB_BAR_HEIGHT = 40;          // même valeur que .tabs dans shell.css
 const PARTITION = "tradeagent";     // session à part, en mémoire : rien n'est écrit sur disque par les pages
+const REMOTE_TIMEOUT_MS = 8000;
+const PROBE_PARTITION = "tradeagent-probe";     // en mémoire, sans cookie : pour vérifier une adresse avant de l'adopter
 // En développement : la racine du dépôt. Version portable : le dossier de l'exécutable, où tout vit (config.yaml,
 // .env, data/, .venv), et `payload` = ce qui est livré avec l'application (voir lib/setup.js).
 const { root: ROOT, payload: PAYLOAD } = setup.layout({
@@ -42,10 +50,16 @@ const { root: ROOT, payload: PAYLOAD } = setup.layout({
 });
 if (app.isPackaged) app.setPath("userData", path.join(ROOT, "data", "electron"));   // rien dans le dossier utilisateur
 const SMOKE_DIR = process.env.TRADEAGENT_DESKTOP_SMOKE || "";   // vérification automatique : capture puis quitte
-const SMOKE_BOT = process.env.TRADEAGENT_DESKTOP_SMOKE_BOT || "";   // ... en démarrant puis arrêtant ce bot
+const SMOKE_BOT_ASKED = process.env.TRADEAGENT_DESKTOP_SMOKE_BOT || "";   // ... en démarrant puis arrêtant ce bot
+const SMOKE_REMOTE = process.env.TRADEAGENT_DESKTOP_SMOKE_REMOTE || "";   // ... ou en mode distant, sur ce serveur
+// Mode distant : session à part elle aussi, mais gardée sur disque (dans le dossier de données de l'application), pour
+// que la connexion au serveur survive à un redémarrage. Le cookie de session du serveur expire de lui-même au bout
+// de sept jours. En vérification automatique : session en mémoire, vierge, donc jamais connectée.
+const REMOTE_PARTITION = SMOKE_DIR ? "tradeagent-remote-smoke" : "persist:tradeagent-remote";
 const LOG_DIR = path.join(ROOT, "data", "logs");
 const BOT_LABELS = { running: "en marche", stopping: "arrêt en cours…", stopped: "arrêté" };
 const WATCH_MS = 15000;             // cadence de relecture des instantanés pour les notifications
+const CONFIG_FILE = path.join(ROOT, "data", "desktop.json");     // serveur distant ou cet ordinateur
 
 let win = null;
 let tray = null;
@@ -56,7 +70,8 @@ const smokeNotes = [];              // en vérification automatique : notées da
 let quitting = false;        // « Quitter » a été confirmé : la fenêtre peut vraiment se fermer
 let trayHintShown = false;
 let shellReady = false;
-const state = { profiles: [], active: null, error_title: "", error: "" };
+const state = { profiles: [], active: null, error_title: "", error: "", remote: null };
+let connectWin = null;
 
 // ---------------------------------------------------------------- état → barre d'onglets
 function publish() {
@@ -72,6 +87,7 @@ function publish() {
 }
 
 function botStatus(name) {
+  if (state.remote) return "remote";       // les bots tournent sur le serveur : l'application ne fait que regarder
   return supervisor ? supervisor.state(name).status : "stopped";
 }
 
@@ -86,6 +102,7 @@ function hardenSession() {
   const ses = session.fromPartition(PARTITION);
   ses.setPermissionRequestHandler((_wc, _permission, callback) => callback(false));
   ses.setPermissionCheckHandler(() => false);
+  ses.on("will-download", (event) => event.preventDefault());
   const ports = new Set(state.profiles.map((p) => p.port));
   ses.webRequest.onBeforeRequest((details, callback) => {
     let ok = false;
@@ -101,15 +118,24 @@ function hardenSession() {
 
 function createView(profile) {
   const view = new WebContentsView({
-    webPreferences: { partition: PARTITION, sandbox: true, contextIsolation: true, nodeIntegration: false, webSecurity: true },
+    webPreferences: {
+      partition: state.remote ? REMOTE_PARTITION : PARTITION, sandbox: true, contextIsolation: true, nodeIntegration: false, webSecurity: true,
+    },
   });
   const wc = view.webContents;
   wc.setWindowOpenHandler(() => ({ action: "deny" }));
   wc.on("will-navigate", (event, url) => {
-    if (!backend.isProfileUrl(url, profile.port)) event.preventDefault();
+    const inside = state.remote ? remote.isRemoteUrl(url, state.remote) : backend.isProfileUrl(url, profile.port);
+    if (!inside) event.preventDefault();
   });
   wc.on("will-attach-webview", (event) => event.preventDefault());
-  wc.loadURL(backend.profileUrl(profile.port));
+  if (state.remote) {
+    // Une connexion, une déconnexion ou une session expirée se voient à une navigation : on relit l'état aussitôt.
+    wc.on("did-navigate", () => { refreshRemote(); });
+    wc.loadURL(profile.url);
+  } else {
+    wc.loadURL(backend.profileUrl(profile.port));
+  }
   return view;
 }
 
@@ -140,6 +166,161 @@ function select(name) {
   if (!state.profiles.some((p) => p.name === name)) return;
   state.active = name;
   showActive();
+}
+
+// ---------------------------------------------------------------- mode distant (lecture seule)
+function hardenRemoteSession() {
+  const ses = session.fromPartition(REMOTE_PARTITION);
+  ses.setPermissionRequestHandler((_wc, _permission, callback) => callback(false));
+  ses.setPermissionCheckHandler(() => false);
+  ses.webRequest.onBeforeRequest((details, callback) => {
+    callback({ cancel: !remote.allowsRequest(details.url, state.remote) });
+  });
+  ses.on("will-download", (event) => event.preventDefault());     // une page en lecture seule n'a rien à faire enregistrer
+}
+
+// Une lecture du serveur avec la session ouverte dans la fenêtre (son cookie). GET seulement, jamais de redirection suivie.
+async function remoteText(url, maxBytes) {
+  if (!remote.isRemoteUrl(url, state.remote)) throw new Error("adresse hors du serveur");
+  const response = await session.fromPartition(REMOTE_PARTITION).fetch(url, {
+    credentials: "include", redirect: "manual", cache: "no-store", signal: AbortSignal.timeout(REMOTE_TIMEOUT_MS),
+  });
+  return { status: response.status, text: await remote.boundedText(response, maxBytes || remote.MAX_SMALL_BYTES) };
+}
+
+function remoteTab(name) {
+  const home = name === remote.HOME_TAB;
+  return {
+    name, status: "ready", error: "", child: null, view: null, port: name,     // `port` : la clé que lit la surveillance
+    url: home ? state.remote + "/" : remote.profileUrl(state.remote, name),
+    description: home ? "Page d'accueil du serveur : connexion, liste des profils, déconnexion" : `Profil ${name} sur le serveur`,
+  };
+}
+
+function dropView(profile) {
+  if (!profile.view) return;
+  if (win && !win.isDestroyed()) win.contentView.removeChildView(profile.view);
+  profile.view.webContents.close();
+  profile.view = null;
+}
+
+let remoteBusy = null;
+// Relit où en est la session sur le serveur et ajuste les onglets : l'accueil seul tant qu'on n'est pas connecté,
+// un onglet par profil ensuite. Jamais deux relectures en même temps.
+function refreshRemote() {
+  if (!state.remote || quitting) return Promise.resolve();
+  if (!remoteBusy) remoteBusy = applyRemote().catch((exc) => console.error(`[serveur] ${exc.message}`)).finally(() => { remoteBusy = null; });
+  return remoteBusy;
+}
+
+async function applyRemote() {
+  const answer = await remote.sessionState(state.remote, remoteText);
+  const home = state.profiles.find((p) => p.name === remote.HOME_TAB);
+  home.status = answer.state === "down" ? "error" : "ready";
+  home.error = answer.state === "down" ? `${answer.error}\nAdresse : ${state.remote}\nPour la changer : menu Serveur.` : "";
+  const before = state.profiles.filter((p) => p.name !== remote.HOME_TAB).map((p) => p.name);
+  // Serveur injoignable un instant : on garde les onglets, la page de chacun dit elle-même que la connexion est perdue.
+  const wanted = answer.state === "in" ? answer.names : answer.state === "down" ? before : [];
+  if (JSON.stringify(wanted) !== JSON.stringify(before)) {
+    for (const p of state.profiles) {
+      if (p.name !== remote.HOME_TAB && !wanted.includes(p.name)) dropView(p);
+    }
+    state.profiles = [home, ...wanted.map((name) => state.profiles.find((p) => p.name === name) || remoteTab(name))];
+    if (wanted.length && !before.length) {
+      state.active = wanted[0];             // on vient de se connecter : droit sur le premier profil
+    } else if (!state.profiles.some((p) => p.name === state.active)) {
+      state.active = remote.HOME_TAB;       // session fermée ou expirée : retour à la page de connexion
+      if (home.view) home.view.webContents.loadURL(home.url);
+    }
+    refreshMenus();
+  }
+  showActive();
+}
+
+async function bootRemote(origin) {
+  state.remote = origin;
+  hardenRemoteSession();
+  state.profiles = [remoteTab(remote.HOME_TAB)];
+  state.active = remote.HOME_TAB;
+  refreshMenus();
+  publish();
+  await refreshRemote();
+  watcher = new Watcher({
+    fetchSnapshot: (name) => remote.fetchSnapshot(state.remote, name, remoteText),
+    // Un bot du serveur est censé tourner en continu : un instantané qui vieillit est donc signalé. (Si c'est le
+    // serveur entier qui ne répond plus, rien n'est notifié : l'onglet d'accueil le dit, pas une notification.)
+    isRunning: () => true,
+    notify: notifyUser,
+  });
+  await watch();
+  setInterval(() => { refreshRemote().then(watch); }, WATCH_MS);
+  if (SMOKE_DIR) smoke();
+}
+
+// ---------------------------------------------------------------- choix : un serveur, ou cet ordinateur
+function openConnect() {
+  if (connectWin && !connectWin.isDestroyed()) {
+    connectWin.focus();
+    return;
+  }
+  connectWin = new BrowserWindow({
+    width: 560, height: 470, resizable: false, minimizable: false, maximizable: false, parent: visibleWindow(), modal: false,
+    backgroundColor: "#0d1117", title: "tradeagent", autoHideMenuBar: true,
+    webPreferences: { preload: path.join(__dirname, "connect-preload.js"), sandbox: true, contextIsolation: true, nodeIntegration: false },
+  });
+  connectWin.setMenuBarVisibility(false);
+  connectWin.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+  connectWin.webContents.on("will-navigate", (event) => event.preventDefault());
+  connectWin.on("closed", () => { connectWin = null; });
+  connectWin.loadFile(path.join(__dirname, "connect.html"));
+}
+
+// Changer de mode redémarre l'application. La session ouverte sur l'ancien serveur est effacée du disque d'abord.
+async function restart() {
+  await session.fromPartition(REMOTE_PARTITION).clearStorageData().catch(() => {});
+  // Sans --local ni --profile : ils rejoueraient l'ancien choix au redémarrage.
+  app.relaunch({ args: process.argv.slice(1).filter((a) => a !== "--local" && !a.startsWith("--profile=")) });
+  app.quit();
+}
+
+// Des bots tournent sur ce poste : on ne change pas de mode par-dessus (quitter les arrêterait, et un « Annuler » à
+// la confirmation laisserait un réglage écrit mais pas appliqué).
+function busyWithBots() {
+  return supervisor && supervisor.running().length
+    ? "Des bots tournent sur cet ordinateur. Arrête-les d'abord (menu Bots, Tout arrêter), puis recommence." : "";
+}
+
+// Rend "" si l'adresse est acceptée (l'application redémarre alors dessus), sinon le refus à montrer.
+async function chooseRemote(text) {
+  const busy = busyWithBots();
+  if (busy) return busy;
+  let origin;
+  try {
+    origin = remote.parseAddress(text);
+  } catch (exc) {
+    return String(exc.message || exc);
+  }
+  const fetchText = async (url) => {
+    const response = await session.fromPartition(PROBE_PARTITION).fetch(url, {
+      credentials: "omit", redirect: "manual", cache: "no-store", signal: AbortSignal.timeout(REMOTE_TIMEOUT_MS),
+    });
+    return { status: response.status, text: await remote.boundedText(response, remote.MAX_SMALL_BYTES) };
+  };
+  if (!(await remote.probe(origin, fetchText))) {
+    return `Aucun serveur tradeagent ne répond à ${origin}. Vérifie l'adresse, et que ce poste est bien sur le même réseau que le serveur.`;
+  }
+  // Un bot a pu être démarré pendant la vérification (jusqu'à 8 s) : on revérifie juste avant d'écrire le réglage.
+  const busyNow = busyWithBots();
+  if (busyNow) return busyNow;
+  remote.writeConfig(CONFIG_FILE, { remote: origin });
+  await restart();
+  return "";
+}
+
+async function chooseLocal() {
+  if (busyWithBots()) return;
+  remote.writeConfig(CONFIG_FILE, { mode: "local" });
+  await restart();
 }
 
 // ---------------------------------------------------------------- serveurs web (lecture seule)
@@ -244,6 +425,27 @@ async function ensureInstalled() {
 }
 
 async function boot() {
+  let choice;
+  try {
+    choice = SMOKE_DIR && SMOKE_REMOTE ? { remote: remote.parseAddress(SMOKE_REMOTE) }
+      : SMOKE_DIR || process.argv.includes("--local") ? { mode: "local" } : remote.readConfig(CONFIG_FILE);
+  } catch (exc) {
+    fatal("Adresse de serveur invalide", String(exc.message || exc));
+    if (SMOKE_DIR) app.quit();
+    return;
+  }
+  if (choice.remote) {
+    await bootRemote(choice.remote);
+    return;
+  }
+  if (!choice.mode && PAYLOAD) {
+    // Version portable, premier lancement : on demande d'abord où tournent les bots. Un poste qui ne fait que
+    // regarder un serveur n'a pas besoin de Python, donc on n'installe rien avant ce choix.
+    fatal("Où tournent les bots ?", "Choisis dans la fenêtre qui vient de s'ouvrir : un serveur, ou cet ordinateur.\n(Menu Serveur pour la rouvrir.)");
+    refreshMenus();
+    openConnect();
+    return;
+  }
   if (PAYLOAD && !(await ensureInstalled())) return;
   const python = backend.venvPython(ROOT);
   if (!fs.existsSync(python)) {
@@ -281,7 +483,8 @@ async function boot() {
 // ---------------------------------------------------------------- notifications de bureau (sortantes uniquement)
 function watch() {
   if (!watcher || quitting) return Promise.resolve();
-  return watcher.poll(state.profiles.filter((p) => p.status === "ready")).catch((exc) => console.error(`[notifications] ${exc.message}`));
+  const watched = state.profiles.filter((p) => p.status === "ready" && p.name !== remote.HOME_TAB);
+  return watcher.poll(watched).catch((exc) => console.error(`[notifications] ${exc.message}`));
 }
 
 function notifyUser(name, { title, body }) {
@@ -335,6 +538,9 @@ function onBotChange(name, bot) {
 }
 
 function botItems() {
+  if (state.remote) {
+    return [{ label: "Les bots tournent sur le serveur : cette application ne fait que les montrer", enabled: false }];
+  }
   const items = [];
   for (const p of state.profiles) {
     const status = botStatus(p.name);
@@ -364,7 +570,8 @@ function refreshMenus() {
   buildMenu();
   if (!tray) return;
   const running = supervisor ? supervisor.running().length : 0;
-  tray.setToolTip(running ? `tradeagent — ${running} bot${running > 1 ? "s" : ""} en marche` : "tradeagent — aucun bot en marche");
+  tray.setToolTip(state.remote ? `tradeagent : ${new URL(state.remote).host}`
+    : running ? `tradeagent — ${running} bot${running > 1 ? "s" : ""} en marche` : "tradeagent — aucun bot en marche");
   tray.setContextMenu(Menu.buildFromTemplate([
     { label: "Afficher la fenêtre", click: showWindow },
     { type: "separator" },
@@ -394,6 +601,17 @@ function buildMenu() {
     },
     { label: "Bots", submenu: botItems() },
     {
+      label: "Serveur",
+      submenu: state.remote ? [
+        { label: `Connecté à ${new URL(state.remote).host}`, enabled: false },
+        { label: "Changer d'adresse…", click: openConnect },
+        { label: "Utiliser cet ordinateur (mode local)", click: chooseLocal },
+      ] : [
+        { label: "Les interfaces et les bots tournent sur cet ordinateur", enabled: false },
+        { label: "Se connecter à un serveur…", click: openConnect },
+      ],
+    },
+    {
       label: "Profils",
       submenu: state.profiles.map((p, i) => ({
         label: p.name, accelerator: `CmdOrCtrl+${i + 1}`, click: () => select(p.name),
@@ -418,8 +636,11 @@ function buildMenu() {
         click: () => dialog.showMessageBox(win, {
           type: "info", title: "tradeagent",
           message: "tradeagent — paper trading, argent fictif",
-          detail: "Cette fenêtre affiche l'interface locale en lecture seule de chaque profil.\n"
-            + "Le menu Bots démarre et arrête les bots ; fermer la fenêtre ne les arrête pas, Quitter si.\n"
+          detail: (state.remote
+            ? `Cette fenêtre affiche l'interface en lecture seule du serveur ${new URL(state.remote).host}.\n`
+              + "Les bots tournent sur le serveur : rien ne se démarre ni ne s'arrête d'ici.\n"
+            : "Cette fenêtre affiche l'interface locale en lecture seule de chaque profil.\n"
+              + "Le menu Bots démarre et arrête les bots ; fermer la fenêtre ne les arrête pas, Quitter si.\n")
             + "Reprendre un bot arrêté ou repartir d'une nouvelle vie reste en ligne de commande :\n"
             + "tradeagent resume · tradeagent reset",
         }),
@@ -435,6 +656,7 @@ function zoom(view, delta) {
 
 // ---------------------------------------------------------------- vérification automatique
 async function smoke() {
+  const SMOKE_BOT = supervisor ? SMOKE_BOT_ASKED : "";      // en mode distant il n'y a aucun bot à démarrer
   if (SMOKE_BOT) await startBot(SMOKE_BOT);
   await new Promise((r) => setTimeout(r, SMOKE_BOT ? 7000 : 2500));
   fs.mkdirSync(SMOKE_DIR, { recursive: true });
@@ -452,6 +674,7 @@ async function smoke() {
   if (SMOKE_BOT) await supervisor.stopAll();
   await watch();
   fs.writeFileSync(path.join(SMOKE_DIR, "state.json"), JSON.stringify({
+    remote: state.remote, active: state.active,
     profiles: state.profiles.map((p) => ({ name: p.name, port: p.port, status: p.status, error: p.error })),
     hidden, bot_during: during, bot_after: SMOKE_BOT ? supervisor.state(SMOKE_BOT) : null,
     watch: watcher.view(), notifications: smokeNotes,
@@ -473,6 +696,11 @@ if (!app.requestSingleInstanceLock()) {
     shellReady = true;
     publish();
   });
+  // La fenêtre de choix : trois messages, qui ne règlent que l'adresse affichée. Aucun n'agit sur un bot.
+  const fromConnect = (event) => connectWin && !connectWin.isDestroyed() && event.sender === connectWin.webContents;
+  ipcMain.handle("connect-remote", (event, address) => (fromConnect(event) ? chooseRemote(String(address).slice(0, 300)) : "refusé"));
+  ipcMain.on("connect-local", (event) => { if (fromConnect(event)) chooseLocal(); });
+  ipcMain.on("connect-ready", (event) => { if (fromConnect(event)) event.sender.send("connect-current", state.remote || ""); });
 
   app.whenReady().then(() => {
     win = new BrowserWindow({

@@ -7,7 +7,7 @@
   const tabs = document.getElementById("tabs");
   const message = document.getElementById("message");
   const LABELS = { starting: "démarrage", ready: "prête", error: "erreur" };
-  const BOTS = { running: "bot en marche", stopping: "arrêt du bot en cours", stopped: "bot arrêté" };
+  const BOTS = { running: "bot en marche", stopping: "arrêt du bot en cours", stopped: "bot arrêté", remote: "sur le serveur" };
 
   function render(state) {
     while (tabs.firstChild) tabs.removeChild(tabs.firstChild);
@@ -20,14 +20,14 @@
       // La pastille dit si le bot tourne (démarré par cette application) ; rouge = interface indisponible.
       const bot = BOTS[p.bot] || p.bot;
       tab.title = p.description + "\n" + bot + " · interface " + (LABELS[p.status] || p.status)
-        + "\nDémarrer ou arrêter : menu Bots.";
+        + (p.bot === "remote" ? "\nLecture seule : les bots se pilotent sur le serveur." : "\nDémarrer ou arrêter : menu Bots.");
       const dot = document.createElement("span");
       dot.className = "dot " + (p.status === "error" ? "error" : "bot-" + p.bot);
       const label = document.createElement("span");
       label.textContent = p.name;
       tab.appendChild(dot);
       tab.appendChild(label);
-      if (p.bot !== "stopped") {
+      if (p.bot === "running" || p.bot === "stopping") {
         const badge = document.createElement("span");
         badge.className = "badge";
         badge.textContent = p.bot === "running" ? "en marche" : "arrêt…";
@@ -43,8 +43,8 @@
     if (show) {
       document.getElementById("messageTitle").textContent =
         !active ? state.error_title || "Impossible de démarrer"
-          : active.status === "error" ? "Interface du profil « " + active.name + " » indisponible"
-            : "Démarrage de l'interface du profil « " + active.name + " »…";
+          : active.status === "error" ? "Interface « " + active.name + " » indisponible"
+            : "Démarrage de l'interface « " + active.name + " »…";
       document.getElementById("messageText").textContent = !active ? state.error || "" : active.error || "";
     }
   }

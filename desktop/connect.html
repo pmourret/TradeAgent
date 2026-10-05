@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'">
+<meta name="color-scheme" content="dark light">
+<title>tradeagent : où tournent les bots ?</title>
+<link rel="stylesheet" href="shell.css">
+<script src="connect.js" defer></script>
+</head>
+<body class="connect">
+<main class="message">
+  <h1>Où tournent les bots ?</h1>
+  <p>Sur un serveur : saisis son adresse. L'application affichera son interface, en lecture seule.</p>
+  <form id="form" class="connect-form">
+    <label for="address">Adresse du serveur</label>
+    <input id="address" type="text" inputmode="url" autocomplete="off" spellcheck="false" placeholder="https://trade.exemple.org" autofocus>
+    <button id="connect" type="submit">Se connecter</button>
+  </form>
+  <p id="error" class="connect-error" role="alert"></p>
+  <p>Sur cet ordinateur : l'application lance elle-même les interfaces et les bots.</p>
+  <button id="local" type="button" class="quiet">Utiliser cet ordinateur</button>
+</main>
+</body>
+</html>

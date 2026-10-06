@@ -43,8 +43,28 @@ SLEEVE_NAMES = ("trend",)
 MAX_NOTE_CHARS = 200
 
 
+RESELL_MARGIN = 1.02         # de quoi couvrir l'arrondi de quantité et un petit saut sous le niveau de sortie
+
+
 def exact_value(position: dict[str, float]) -> float:
     return position["quantity"] * position["price"]
+
+
+def entry_amount(view: MarketView, symbol: str, sized: float, exit_pct: float) -> float:
+    """Le montant d'une entrée à la taille `sized`, ou 0 s'il ne faut pas entrer.
+
+    Une position n'est ouverte que si elle reste revendable jusqu'à son niveau de sortie : à `exit_pct` sous le
+    prix d'achat, elle doit valoir encore l'ordre minimal (décision de Pierre du 2026-10-05). Sinon une petite
+    baisse la rendrait invendable au moment même où il faut la couper. Une entrée que le modèle de risque taille
+    au-dessus du minimum mais trop près de lui est arrondie à ce minimum revendable (le risque passe d'environ
+    1 % à 1,1 % de l'equity) ; une entrée taillée sous le minimum reste refusée, comme avant.
+    """
+    minimum = view.limits.get("min_order_quote", 0.0)
+    if sized <= 0 or sized < minimum or not 0 <= exit_pct < 100:
+        return 0.0
+    need = math.ceil(minimum / (1 - exit_pct / 100) * RESELL_MARGIN * 100) / 100
+    amount = min(buy_room(view, symbol), max(sized, need))
+    return amount if amount >= need and amount > 0 else 0.0
 
 
 class Sleeve(Protocol):
@@ -129,7 +149,6 @@ class TrendSleeve:
             leaving = True
         if leaving or not may_enter:
             return
-        minimum = view.limits.get("min_order_quote", 0.0)
         for symbol in sorted(view.positions):
             if symbol in self._qty:
                 continue
@@ -138,11 +157,156 @@ class TrendSleeve:
             price = view.positions[symbol]["price"]
             if (models.get("trend") or {}).get("regime") != "up" or not risk or price <= 0:
                 continue
-            amount = min(buy_room(view, symbol), round(view.equity * risk["size_pct"] / 100, 2))
-            if amount >= minimum and amount > 0:
+            amount = entry_amount(view, symbol, round(view.equity * risk["size_pct"] / 100, 2), risk["exit_pct"])
+            if amount > 0:
                 self._qty[symbol] = amount / price
                 self._stops[symbol] = price * (1 - risk["exit_pct"] / 100)
                 self._notes[symbol] = f"tendance à la hausse, sortie à -{risk['exit_pct']:g} %"
+
+
+class CoreSleeve:
+    """Le socle : une part fixe de la mise, à parts égales sur chaque symbole, achetée dès que possible et gardée.
+    Backtest seulement pour l'instant (décision de Pierre du 2026-10-05 : un socle large, pire mois de −10 % au plus).
+
+    C'est la part de `buyhold` que le board détient en permanence ; le suivi de tendance travaille sur le reste.
+    Le socle ne sort jamais de lui-même : seuls le kill switch (liquidation à la mort, action du moteur) et les
+    garde-fous le limitent. Une part perdue ou non obtenue est rachetée dès que les marges le permettent ; une part
+    servie en partie (ordre réduit) reste à ce qu'elle a obtenu.
+    """
+
+    name = "core"
+
+    def __init__(self, share_pct: float, state: dict | None = None) -> None:
+        if not 0 < share_pct <= 100:
+            raise ValueError(f"part du socle hors bornes : {share_pct}")
+        self.share_pct = share_pct
+        state = state if state is not None else {}
+        self._qty: dict[str, float] = state.setdefault("qty", {})
+        self._notes: dict[str, str] = state.setdefault("notes", {})
+
+    def wanted(self) -> dict[str, float]:
+        return dict(self._qty)
+
+    def note(self, symbol: str) -> str:
+        return self._notes.get(symbol, "")
+
+    def rescale(self, symbol: str, factor: float) -> None:
+        if factor <= 0:
+            self._qty.pop(symbol, None)
+        elif symbol in self._qty:
+            self._qty[symbol] *= factor
+
+    def update(self, view: MarketView, may_enter: bool) -> None:
+        for symbol in list(self._qty):
+            if symbol not in view.positions:
+                self._qty.pop(symbol)
+        if not may_enter:
+            return
+        minimum = view.limits.get("min_order_quote", 0.0)
+        part = round(view.stake * self.share_pct / 100 / len(view.positions), 2)
+        for symbol in sorted(view.positions):
+            price = view.positions[symbol]["price"]
+            if symbol in self._qty or price <= 0:
+                continue
+            amount = min(buy_room(view, symbol), part)
+            if amount >= minimum and amount > 0:
+                self._qty[symbol] = amount / price
+                self._notes[symbol] = f"socle de {self.share_pct:g} % de la mise, gardé"
+
+
+RS_LOOKBACK = "30d"          # la force se mesure au rendement sur 30 jours (`change_long_pct` du résumé de marché)
+RS_SWITCH_GAP_PTS = 5.0      # changer de meneur seulement s'il mène de 5 points : un aller-retour coûte ~0,6 %
+
+
+class RelativeStrengthSleeve:
+    """Force relative : détient la paire la plus forte des deux, une seule à la fois. Backtest seulement pour l'instant.
+
+    Variante unique, déclarée avant tout essai (décision du 2026-10-05 : une seule variante, jugée sur des mois
+    jamais regardés). Le meneur est le symbole au plus fort rendement sur 30 jours. On y entre s'il monte (rendement
+    positif) et si son régime de tendance n'est pas à la baisse, à la taille du modèle de risque. On en sort si son
+    rendement passe à zéro ou dessous, si son régime passe à la baisse, si le prix touche le niveau de sortie (qui
+    suit le prix à la hausse), ou si un autre symbole le dépasse d'au moins `RS_SWITCH_GAP_PTS` points. Comme le
+    suivi de tendance, pas d'entrée le cycle d'une sortie : le changement de meneur se fait en deux cycles.
+    """
+
+    name = "rs"
+
+    def __init__(self, state: dict | None = None) -> None:
+        state = state if state is not None else {}
+        self._qty: dict[str, float] = state.setdefault("qty", {})
+        self._stops: dict[str, float] = state.setdefault("stops", {})
+        self._notes: dict[str, str] = state.setdefault("notes", {})
+
+    def wanted(self) -> dict[str, float]:
+        return dict(self._qty)
+
+    def note(self, symbol: str) -> str:
+        return self._notes.get(symbol, "")
+
+    def _drop(self, symbol: str) -> None:
+        self._qty.pop(symbol, None)
+        self._stops.pop(symbol, None)
+
+    def rescale(self, symbol: str, factor: float) -> None:
+        if factor <= 0:
+            if symbol in self._qty:
+                self._notes[symbol] = "position non obtenue ou perdue"
+            self._drop(symbol)
+        elif symbol in self._qty:
+            self._qty[symbol] *= factor
+
+    @staticmethod
+    def _strength(view: MarketView) -> dict[str, float]:
+        """Le rendement sur 30 jours de chaque symbole qui en a un."""
+        out = {}
+        for symbol in view.positions:
+            value = (view.market.get(symbol, {}).get("change_long_pct") or {}).get(RS_LOOKBACK)
+            if isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value):
+                out[symbol] = float(value)
+        return out
+
+    def update(self, view: MarketView, may_enter: bool) -> None:
+        strength = self._strength(view)
+        leaving = False
+        for symbol in sorted(self._qty):
+            position = view.positions.get(symbol)
+            if position is None:
+                self._drop(symbol)
+                continue
+            price = position["price"]
+            models = view.market.get(symbol, {}).get("models") or {}
+            exit_pct = (models.get("risk") or {}).get("exit_pct")
+            if exit_pct:
+                self._stops[symbol] = max(self._stops.get(symbol, 0.0), price * (1 - exit_pct / 100))
+            stop, own = self._stops.get(symbol), strength.get(symbol)
+            rival = max((v for s, v in strength.items() if s != symbol), default=None)
+            if (models.get("trend") or {}).get("regime") == "down":
+                why = "tendance à la baisse, on sort"
+            elif stop and price <= stop:
+                why = f"niveau de sortie touché ({stop:.5g})"
+            elif own is None:
+                why = "force sur 30 jours inconnue, on sort"
+            elif own <= 0:
+                why = f"rendement sur 30 jours à {own:+.1f} %, on sort"
+            elif rival is not None and rival - own >= RS_SWITCH_GAP_PTS:
+                why = f"dépassé de {rival - own:.1f} points sur 30 jours, on sort"
+            else:
+                continue
+            self._drop(symbol)
+            self._notes[symbol] = why
+            leaving = True
+        if leaving or not may_enter or self._qty or len(strength) < 2:
+            return
+        leader = max(sorted(strength), key=lambda s: strength[s])
+        models = view.market.get(leader, {}).get("models") or {}
+        risk, price = models.get("risk") or {}, view.positions[leader]["price"]
+        if strength[leader] <= 0 or (models.get("trend") or {}).get("regime") == "down" or not risk or price <= 0:
+            return
+        amount = entry_amount(view, leader, round(view.equity * risk["size_pct"] / 100, 2), risk["exit_pct"])
+        if amount > 0:
+            self._qty[leader] = amount / price
+            self._stops[leader] = price * (1 - risk["exit_pct"] / 100)
+            self._notes[leader] = f"meneur sur 30 jours ({strength[leader]:+.1f} %), sortie à -{risk['exit_pct']:g} %"
 
 
 class BoardAgent:

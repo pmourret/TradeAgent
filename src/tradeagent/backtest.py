@@ -23,7 +23,7 @@ from dataclasses import dataclass
 
 from .agents import Agent, ChaosAgent, HoldAgent
 from .app import build_engine
-from .board import BoardAgent, TrendSleeve
+from .board import BoardAgent, CoreSleeve, RelativeStrengthSleeve, TrendSleeve
 from .budget import InferenceBudget
 from .config import Config, ConfigError
 from .exchange import ExchangeError
@@ -35,7 +35,9 @@ from .replay import ReplayPriceFeed, SimClock
 from .storage import Storage
 from .strategies import STRATEGIES
 
-BACKTEST_AGENTS = ("hold", "buyhold", "quant", "board", "chaos", "llm-fake", "llm")
+CORE_SHARES = (20, 30, 40, 50, 60)      # variantes du socle à essayer sur les mois de développement (en % de la mise)
+CORE_AGENTS = tuple(f"board-core{share}" for share in CORE_SHARES)
+BACKTEST_AGENTS = ("hold", "buyhold", "quant", "board", "board-rs", *CORE_AGENTS, "chaos", "llm-fake", "llm")
 PAID_AGENTS = ("llm",)     # ceux qui appellent le vrai LLM : argent réel, plafond obligatoire
 DEFAULT_AGENTS = ("hold", "buyhold", "quant", "board", "chaos")
 STOPPED = ("dead", "halted", "stopped")
@@ -81,6 +83,10 @@ def _build_agent(kind: str, cfg: Config, storage: Storage, clock: SimClock, seed
         return STRATEGIES[kind]()
     if kind == "board":
         return BoardAgent([TrendSleeve()])
+    if kind == "board-rs":          # le board avec un deuxième siège, la force relative : backtest seulement
+        return BoardAgent([TrendSleeve(), RelativeStrengthSleeve()])
+    if kind in CORE_AGENTS:         # le board avec un socle permanent (« board-core30 » : 30 % de la mise)
+        return BoardAgent([CoreSleeve(float(kind.removeprefix("board-core"))), TrendSleeve()])
     if kind == "llm-fake":
         return LLMAgent(cfg, FakeLLMClient(seed=seed), InferenceBudget(cfg.llm, storage, clock), storage, clock)
     if kind in PAID_AGENTS:

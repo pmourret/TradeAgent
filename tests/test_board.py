@@ -68,6 +68,16 @@ def board():
 
 
 # -- le sous-agent tendance ------------------------------------------------------------
+def test_une_entree_reste_revendable_jusqu_a_son_niveau_de_sortie():
+    # 5.35 EUR à sortie -9.58 % vaudraient 4.84 EUR au niveau de sortie : invendables. Arrondi au minimum revendable.
+    buy = board().decide(view(size_pct=10.7, exit_pct=9.58))
+    need = round(5.0 / (1 - 0.0958) * 1.02 + 0.005, 2)
+    assert (buy.action, buy.amount_quote) == (BUY, need) and need * (1 - 0.0958) >= 5.0
+    assert board().decide(view(size_pct=10.7, exit_pct=9.58, max_order_quote=5.5)).action == HOLD   # pas la marge
+    assert board().decide(view(size_pct=14.0, exit_pct=9.58)).amount_quote == 7.0           # déjà revendable : inchangé
+    assert board().decide(view(size_pct=9.0, exit_pct=9.58)).action == HOLD                 # 4.50 : toujours refusé
+
+
 def test_tendance_entre_a_la_taille_du_modele_de_risque():
     buy = board().decide(view())
     assert (buy.action, buy.symbol, buy.amount_quote) == (BUY, BTC, 10.0)                  # 20 % de 50
@@ -143,10 +153,11 @@ def test_une_sortie_sous_l_ordre_minimal_laisse_la_poussiere_vendue_quand_elle_r
 
 
 def test_une_position_sous_le_minimum_reste_reclamee_tant_que_rien_ne_dit_de_sortir():
-    sleeve = TrendSleeve()
-    agent = BoardAgent([sleeve])
-    agent.decide(view(size_pct=11.0, exit_pct=15.0))                            # 5.50 EUR, sortie à 51 000
+    # Une position de 5.50 EUR à sortie -15 % ne s'ouvre plus (elle serait arrondie à 6.00, revendable jusqu'à sa
+    # sortie) ; elle existe encore si elle date d'avant cette règle, ou après un saut de prix.
     qty = 5.5 / 60_000.0
+    sleeve = TrendSleeve({"qty": {BTC: qty}, "stops": {BTC: 51_000.0}})
+    agent = BoardAgent([sleeve])
     assert agent.decide(view(btc_qty=qty, btc_price=54_000.0, exit_pct=15.0)).action == HOLD   # 4.95 EUR, au-dessus du niveau
     assert sleeve.wanted() == {BTC: qty} and sleeve._stops[BTC] == 51_000.0
     back = agent.decide(view(btc_qty=qty, btc_price=55_000.0, exit_pct=15.0, regime="down"))
@@ -299,9 +310,8 @@ def test_le_seuil_se_juge_sur_la_valeur_exacte_pas_sur_la_valeur_arrondie_de_la_
 
 
 def test_une_cible_servie_aux_frais_pres_reste_reclamee_meme_sous_l_ordre_minimal():
-    sleeve = TrendSleeve()
-    agent = BoardAgent([sleeve])
-    agent.decide(view(size_pct=11.0, exit_pct=15.0))                            # 5.50 EUR voulus, sortie à 51 000
+    sleeve = TrendSleeve({"qty": {BTC: 5.5 / 60_000.0}, "stops": {BTC: 51_000.0}})   # d'avant la règle du minimum
+    agent = BoardAgent([sleeve])                                                # revendable : 5.50 EUR à -15 %
     got = 0.000091                                                              # 5.46 EUR obtenus (frais, arrondi)
     assert agent.decide(view(btc_qty=got, btc_price=54_000.0, exit_pct=15.0)).action == HOLD    # 4.91 EUR
     assert sleeve.wanted() == {BTC: pytest.approx(got)} and sleeve._stops[BTC] == 51_000.0

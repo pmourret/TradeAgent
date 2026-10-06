@@ -6,6 +6,8 @@ Axes d'évolution, dans l'ordre conseillé. Mettre à jour quand une phase avanc
 
 **Le projet est en pause de développement.** Pierre a des idées à creuser : la prochaine session commence par une phase de **réflexion et de décision avec lui**, avant tout nouveau code. Ne rien implémenter de la liste ci-dessous sans qu'il l'ait décidé.
 
+**2026-10-06 : feuille de route d'optimisation écrite à la demande de Pierre, dans `roadmap-optimisation.md`.** Elle ordonne le travail sur les outils financiers (mesure, frais, sortie, board) et l'architecture (disponibilité, CI, sauvegardes) en phases P0 à P5, avec un protocole d'expérimentation contre le surapprentissage et la liste des points qui attendent une décision de Pierre. Une fois validée par lui, c'est elle qui guide les sessions suivantes ; ce fichier garde l'historique et les axes A à G.
+
 ### Où on en est
 
 Trois façons de décider ont été jugées sur les mêmes sept mois de bougies réelles (du 2026-03-08 au 2026-10-04, périodes de 30 jours, mise de 50 EUR, chaque période repart de la mise). Tout est du paper : ces chiffres disent qui a le mieux tenu sur cette période, plutôt haussière, pas ce qui se passera ensuite.

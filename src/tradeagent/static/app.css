@@ -201,9 +201,13 @@ a:hover { color: var(--color-accent-200); text-decoration: underline; }
 .dead-note { color: var(--tone-dead-ink); }
 
 #reference { display: contents; }
-.reference { flex: 1 1 220px; display: flex; flex-direction: column; gap: 8px; padding: 18px; border-radius: var(--radius-lg);
+.reference { flex: 1 1 220px; display: flex; flex-direction: column; gap: 14px; padding: 18px; border-radius: var(--radius-lg);
   border: 1px dashed var(--color-neutral-700); color: var(--color-text); min-width: 0; }
-a.reference:hover { color: var(--color-text); text-decoration: none; border-color: var(--color-neutral-500); }
+.ref-part { display: flex; flex-direction: column; gap: 8px; color: var(--color-text); }
+.ref-part + .ref-part { padding-top: 14px; border-top: 1px dashed var(--color-neutral-700); }
+a.ref-part:hover { color: var(--color-text); text-decoration: none; }
+a.ref-part:hover .ref-equity { color: var(--color-text); }
+.liquidation b { color: var(--color-text); }
 .ref-sub { font-size: 13px; color: var(--color-neutral-400); }
 .ref-equity { font-size: 26px; font-weight: 500; font-variant-numeric: tabular-nums; color: var(--color-neutral-300); }
 .ref-gap { font-size: 13px; color: var(--color-neutral-300); font-variant-numeric: tabular-nums; }

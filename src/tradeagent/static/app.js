@@ -384,6 +384,18 @@
       ? "vie de " + lifeDur(s.status.since - s.life.started)
       : lifeDur(s.generated_at - s.life.started) + " de vie";
 
+    // Le résultat net est valorisé aux prix du marché ; vendre coûterait encore glissement et frais.
+    const exit = $("liquidation");
+    exit.hidden = !(typeof m.liquidation_result === "number" && m.exit_costs >= 0.005);
+    if (!exit.hidden) {
+      exit.textContent = "";
+      exit.appendChild(document.createTextNode("Si tout était vendu maintenant "));
+      const b = el("b");
+      setResult(b, signedMoney(m.liquidation_result), signOf(m.liquidation_result));
+      exit.appendChild(b);
+      exit.appendChild(document.createTextNode(" (frais de sortie " + money(m.exit_costs) + ")"));
+    }
+
     const rent = $("rent");
     rent.hidden = !usesApi(s);
     if (!rent.hidden) {
@@ -444,26 +456,43 @@
     else dot.classList.remove("order-dot");
   }
 
-  // La référence à battre. Elle n'est affichée que si l'instantané la donne (`reference`), jamais devinée ici.
-  function renderReference(s, v) {
-    const box = $("reference"), ref = s.reference;
-    const ok = ref && typeof ref.equity === "number" && typeof ref.net_result === "number" && /^[A-Za-z0-9_-]+$/.test(ref.profile || "");
-    box.hidden = !ok;
-    if (!ok) return;
-    clear(box);
-    const card = context === "web" ? el("a", "reference") : el("div", "reference");
-    if (context === "web") card.setAttribute("href", "../" + ref.profile + "/");
-    card.appendChild(el("span", "over", "Référence · " + ref.profile));
-    card.appendChild(el("span", "ref-sub", "Ne fait rien. À battre."));
-    card.appendChild(el("span", "ref-equity", money(ref.equity)));
-    const gap = s.money.net_result - ref.net_result, sign = signOf(gap);
-    const line = el("span", "ref-gap", v.board ? "Écart du board " : "Écart de l'agent ");
-    const value = el("b");
-    setResult(value, signedMoney(gap), sign);
-    line.appendChild(value);
+  // Les références à battre. Chacune n'est affichée que si l'instantané la donne, jamais devinée ici : hold
+  // (`reference`, lue dans la base du profil hold) et le marché (`market_reference`, buyhold acheté au début de
+  // cette vie, valorisé aux derniers prix).
+  function refPart(tag, title, sub, value, gap, who) {
+    const part = el(tag, "ref-part");
+    part.appendChild(el("span", "over", title));
+    part.appendChild(el("span", "ref-sub", sub));
+    part.appendChild(el("span", "ref-equity", money(value)));
+    const sign = signOf(gap);
+    const line = el("span", "ref-gap", "Écart " + who + " ");
+    const b = el("b");
+    setResult(b, signedMoney(gap), sign);
+    line.appendChild(b);
     line.appendChild(document.createTextNode(" "));
     line.appendChild(el("i", null, sign === "pos" ? "devant" : sign === "neg" ? "derrière" : "à égalité"));
-    card.appendChild(line);
+    part.appendChild(line);
+    return part;
+  }
+  function renderReference(s, v) {
+    const box = $("reference"), ref = s.reference, mkt = s.market_reference;
+    const hold = ref && typeof ref.equity === "number" && typeof ref.net_result === "number" && /^[A-Za-z0-9_-]+$/.test(ref.profile || "");
+    const market = mkt && typeof mkt.equity === "number" && typeof mkt.net_result === "number" && mkt.weights_pct;
+    box.hidden = !hold && !market;
+    if (box.hidden) return;
+    clear(box);
+    const card = el("div", "reference"), who = v.board ? "du board" : "de l'agent";
+    if (hold) {
+      const part = refPart(context === "web" ? "a" : "div", "Référence · " + ref.profile, "Ne fait rien. À battre.",
+        ref.equity, s.money.net_result - ref.net_result, who);
+      if (context === "web") part.setAttribute("href", "../" + ref.profile + "/");
+      card.appendChild(part);
+    }
+    if (market) {
+      const shares = Object.keys(mkt.weights_pct).map((k) => num(mkt.weights_pct[k], 0) + " % " + k.split("/")[0]);
+      const sub = shares.join(" et ") + (mkt.late ? " achetés " + longWhen(mkt.started, s.generated_at) + ", gardés." : " achetés au début de la vie, gardés.");
+      card.appendChild(refPart("div", "Marché · buyhold", sub, mkt.equity, s.money.net_result - mkt.net_result, who));
+    }
     box.appendChild(card);
   }
 

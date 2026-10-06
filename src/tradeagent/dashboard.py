@@ -21,6 +21,7 @@ from .board import STATE_KEY as BOARD_STATE_KEY, clean_state
 from .budget import day_start_ts
 from .config import Config
 from .portfolio import base_currency
+from . import reference
 
 MAX_SERIES_POINTS = 240
 JOURNAL_ROWS = 60   # les « attentes » consécutives sont regroupées à l'affichage
@@ -144,6 +145,10 @@ def _fill(snap: dict[str, Any], db: sqlite3.Connection, cfg: Config, now: float)
             "share_pct": (value / equity * 100) if value is not None and equity > 0 else None,
         })
 
+    # Si tout était vendu maintenant : la sortie paie elle aussi glissement et frais. None si un prix manque.
+    exit_costs = (sum(p["value"] for p in positions) * reference.exit_cost_rate(cfg)
+                  if all(p["value"] is not None for p in positions) else None)
+
     # -- jour en cours --------------------------------------------------------
     day = _kv(db, "day")
     today = datetime.fromtimestamp(now, tz=timezone.utc).date().isoformat()
@@ -176,6 +181,8 @@ def _fill(snap: dict[str, Any], db: sqlite3.Connection, cfg: Config, now: float)
             "change_pct": (equity / stake - 1) * 100 if stake else 0.0,
             "api_spent_life": spent_life,
             "net_result": equity - stake - spent_life,
+            "exit_costs": exit_costs,
+            "liquidation_result": equity - stake - spent_life - exit_costs if exit_costs is not None else None,
             "peak_equity": peak, "drawdown_pct": drawdown,
             "death_floor": stake * (1 - cfg.killswitch.max_total_loss_pct / 100),
             "last_update": last[0]["ts"],
@@ -191,6 +198,8 @@ def _fill(snap: dict[str, Any], db: sqlite3.Connection, cfg: Config, now: float)
         # Agent à l'arrêt : bilan et conseil pour l'utilisateur, qui décide. Texte fabriqué par le code, jamais par l'agent.
         "advice": idle_advice(str(idle["cause"]), stake, equity, spent_life, ccy) if idle.get("cause") else None,
         "positions": positions,
+        # Buyhold acheté au début de la vie, valorisé aux derniers prix (`reference.py`). None s'il manque ou est douteux.
+        "market_reference": reference.valuation(_kv(db, reference.KEY), quotes, stake, cfg),
         # Ce que réclament les sous-agents du board (None pour tout autre agent). Aucun texte de la base n'y passe :
         # des nombres, le nom du sous-agent (fixé par le code) et des symboles de la config.
         "board": _board_claims(board_state, quotes, cfg.symbols) if agent == "board" else None,

@@ -26,6 +26,7 @@ from .killswitch import KillSwitch
 from .market import summarize_candles
 from .models import BUY, HOLD, SELL, Decision, Fill
 from .portfolio import Portfolio, base_currency
+from . import reference
 from .storage import Storage
 
 log = logging.getLogger("tradeagent")
@@ -52,6 +53,7 @@ class Engine:
         self._ks = killswitch
         self._stake = stake
         self._clock = clock
+        self._backfill_failures = 0     # prix de départ de la référence marché introuvables (`reference.py`)
 
     # -- observation -----------------------------------------------------
     def snapshot(self) -> Portfolio:
@@ -153,6 +155,7 @@ class Engine:
 
         tier = self._guardrails.tier_for(net, peak)
         self._track_tier(tier, now, net, peak)
+        self._note_market_reference(portfolio, now)
 
         view = self._market_view(portfolio, day, now, tier)
         try:
@@ -196,6 +199,39 @@ class Engine:
             f"(frais {fill.fee:.3f}) | {verdict.reason}"
         )
         return CycleResult("filled", note, decision, verdict, fill)
+
+    # -- référence « marché » --------------------------------------------
+    def _note_market_reference(self, portfolio: Portfolio, now: float) -> None:
+        """Une fois par vie : le portefeuille virtuel de `buyhold` (`reference.py`), que seule l'interface lit.
+
+        C'est une mesure, pas une décision : son échec ne compte jamais comme une erreur de cycle. Une erreur du
+        flux est retentée aux cycles suivants, `reference.BACKFILL_ATTEMPTS` fois au plus (après quoi la référence
+        part de ce cycle) ; tout le reste est journalisé et la référence abandonnée pour cette vie.
+        """
+        try:
+            if self._storage.get(reference.KEY) is not None:
+                return
+            life_started = float((self._storage.get("life") or {}).get("started", now))
+            prices, started = {s: portfolio.price(s) for s in self._cfg.symbols}, now
+            if now - life_started > reference.LATE_AFTER_SECONDS:
+                try:
+                    found = reference.backfill_prices(self._exchange.get_candles, self._cfg.symbols, life_started, now)
+                except ExchangeError as exc:
+                    self._backfill_failures += 1
+                    if self._backfill_failures < reference.BACKFILL_ATTEMPTS:
+                        log.info("référence marché : prix de départ indisponibles (%s), nouvel essai au prochain cycle", exc)
+                        return
+                    log.warning("référence marché : prix de départ introuvables (%s), elle part de ce cycle", exc)
+                    found = None
+                if found is not None:
+                    prices, started = found, life_started
+            self._storage.set(reference.KEY, reference.build(self._cfg, self._stake, prices, started, life_started))
+        except Exception:
+            log.exception("référence marché : abandonnée pour cette vie")
+            try:
+                self._storage.set(reference.KEY, {"abandoned": True})
+            except Exception:
+                log.exception("référence marché : abandon non enregistré")
 
     # -- mort, liquidation, erreurs -------------------------------------
     def _die(self, reason: str, now: float) -> None:

@@ -56,6 +56,14 @@ def fixture(name: str) -> dict:
     # La référence à battre n'est pas encore dans l'instantané (point 5 de la liste « Données ») : elle est ajoutée
     # ici pour que la carte puisse être comparée aux captures.
     snap.setdefault("reference", {"profile": "hold", "equity": snap["money"]["stake"], "net_result": 0.0})
+    # De même pour la référence marché et la valeur de liquidation (ajoutées après le handoff) : des valeurs de
+    # démonstration, dans la forme que leur donne `build_snapshot`.
+    money, held = snap["money"], sum(p["value"] or 0.0 for p in snap["positions"])
+    money.setdefault("exit_costs", held * 0.0029987)
+    money.setdefault("liquidation_result", money["net_result"] - money["exit_costs"])
+    snap.setdefault("market_reference", {
+        "started": snap["life"]["started"], "late": False, "weights_pct": {s: 40.0 for s in snap["symbols"]},
+        "equity": money["stake"] * 1.012, "net_result": money["stake"] * 0.012, "exit_costs": money["stake"] * 0.0024})
     # Le moteur n'écrit pas de décision pour une liquidation : il écrit une exécution de source « killswitch ».
     kept = []
     for row in snap["journal"]:

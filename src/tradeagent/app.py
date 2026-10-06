@@ -15,14 +15,16 @@ from .killswitch import KillSwitch
 from .llm import AnthropicClient, FakeLLMClient
 from .llm_agent import DECISION_SCHEMA, LLMAgent
 from .paper import PaperExchange
+from .reference import KEY as MARKET_REFERENCE_KEY
 from .storage import Storage
 
 # `llm_wake`, `llm_idle` et `llm_plan` : le sommeil, l'arrêt et les plans de sortie de l'agent appartiennent à la
 # vie qui les a décidés.
 # `board_state` : ce que réclament les sous-agents du board et leurs niveaux de sortie, de même.
+# `market_reference` : le portefeuille virtuel de buyhold acheté au début de la vie (`reference.py`).
 # `llm_last_call` n'y est pas, exprès : la cadence des appels payants survit à un reset.
 LIFE_KEYS = ("life", "paper_balances", "killswitch", "peak_equity", "day", "risk_tier", "llm_wake", "llm_idle", "llm_plan",
-             BOARD_STATE_KEY)
+             BOARD_STATE_KEY, MARKET_REFERENCE_KEY)
 AGENT_KINDS = ("hold", "chaos", "llm", "llm-fake", "board")
 PAID_KINDS = ("llm",)      # ceux qui appellent l'API facturée
 
